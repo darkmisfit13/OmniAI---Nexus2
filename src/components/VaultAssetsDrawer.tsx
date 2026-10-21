@@ -26,10 +26,12 @@ import {
   CloudOff,
   RefreshCw,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  LogIn
 } from 'lucide-react';
-import { db, auth } from '../lib/firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { db, auth, signInWithGoogleWorkspace } from '../lib/firebase';
+import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { User, onAuthStateChanged } from 'firebase/auth';
 
 export interface VaultAsset {
   id: string;
@@ -114,6 +116,10 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   const [sortBy, setSortBy] = useState<'date' | 'type' | 'label'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
+  // User Authentication Identity (Firebase Auth currentUser)
+  const [currentUser, setCurrentUser] = useState<User | null>(() => auth.currentUser);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+
   // Cloud Sync to Firestore State
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -124,45 +130,60 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
 
+  // Listen to Firebase Auth state changes
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (!user) {
+        setCloudSyncEnabled(false);
+      }
+    });
+    return () => unsub();
+  }, []);
+
   const pushToFirestore = async (itemsToPush: VaultAsset[]) => {
+    if (!currentUser) {
+      setSyncStatusText('Unavailable: Sign in to sync your vault');
+      return;
+    }
     if (!itemsToPush || itemsToPush.length === 0) return;
     setIsSyncing(true);
-    setSyncStatusText(`Pushing ${itemsToPush.length} items to Firestore...`);
+    setSyncStatusText(`Syncing ${itemsToPush.length} item${itemsToPush.length !== 1 ? 's' : ''} to users/${currentUser.uid.slice(0, 6)}.../vault`);
     try {
-      const user = auth.currentUser;
       for (const asset of itemsToPush) {
         const cleanId = (asset.id || `vault_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
         const payload = {
           ...asset,
           syncedAt: new Date().toISOString(),
-          ownerId: user?.uid || 'anonymous',
+          ownerId: currentUser.uid,
+          ownerEmail: currentUser.email || '',
         };
 
-        // If authenticated, push to private user vault subcollection
-        if (user) {
-          const userDocRef = doc(db, 'users', user.uid, 'vault', cleanId);
-          await setDoc(userDocRef, payload, { merge: true });
-        }
-
-        // Also push to global cross-platform vault collection
-        try {
-          const globalDocRef = doc(db, 'globalVault', cleanId);
-          await setDoc(globalDocRef, payload, { merge: true });
-        } catch {}
+        // EXCLUSIVELY write to the authenticated user's private subcollection in Firestore:
+        // /users/{userId}/vault/{assetId} matches firestore.rules isOwner(userId)
+        // No writes to globalVault (which firestore.rules denies)
+        const userDocRef = doc(db, 'users', currentUser.uid, 'vault', cleanId);
+        await setDoc(userDocRef, payload, { merge: true });
       }
 
-      setSyncStatusText(`Synced ${itemsToPush.length} item${itemsToPush.length !== 1 ? 's' : ''} to Firestore`);
+      setSyncStatusText(`Synced to users/${currentUser.uid.slice(0, 6)}.../vault`);
       setTimeout(() => setSyncStatusText(null), 3500);
     } catch (err: any) {
-      console.warn('Firestore Vault Cloud Sync warning:', err);
-      setSyncStatusText('Synced (offline cache mode)');
-      setTimeout(() => setSyncStatusText(null), 3000);
+      console.warn('Firestore Vault Cloud Sync notice:', err);
+      setSyncStatusText(err?.message?.includes('permission') ? 'Firestore permission denied' : 'Sync error (offline cache)');
+      setTimeout(() => setSyncStatusText(null), 3500);
     } finally {
       setIsSyncing(false);
     }
   };
 
   const handleToggleCloudSync = async () => {
+    if (!currentUser) {
+      setSyncStatusText('Sign-in required to enable cloud sync');
+      setTimeout(() => setSyncStatusText(null), 3000);
+      return;
+    }
+
     const nextState = !cloudSyncEnabled;
     setCloudSyncEnabled(nextState);
     if (typeof window !== 'undefined') {
@@ -170,16 +191,31 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
     }
 
     if (nextState) {
-      // Trigger instant push of all local items to Firestore
       await pushToFirestore(internalAssets);
     } else {
-      setSyncStatusText('Cloud sync disabled');
+      setSyncStatusText('User cloud sync paused');
       setTimeout(() => setSyncStatusText(null), 2000);
     }
   };
 
   const handleManualSync = async () => {
+    if (!currentUser) {
+      setSyncStatusText('Sign-in required to sync');
+      setTimeout(() => setSyncStatusText(null), 3000);
+      return;
+    }
     await pushToFirestore(internalAssets);
+  };
+
+  const handleSignIn = async () => {
+    setIsAuthenticating(true);
+    try {
+      await signInWithGoogleWorkspace();
+    } catch (err) {
+      console.error('Sign-in error from vault drawer:', err);
+    } finally {
+      setIsAuthenticating(false);
+    }
   };
 
   useEffect(() => {
@@ -278,53 +314,74 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
           </button>
         </div>
 
-        {/* Cloud Sync to Firestore Toolbar */}
+        {/* User Cloud Vault (Firestore users/{userId}/vault) Toolbar */}
         <div className="px-4 py-2.5 bg-gradient-to-r from-cyan-950/40 via-slate-900 to-purple-950/30 border-b border-slate-800 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2.5">
             <div className={`p-1.5 rounded-lg border transition ${
-              cloudSyncEnabled 
+              currentUser && cloudSyncEnabled 
                 ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_10px_rgba(0,242,254,0.2)]' 
                 : 'bg-slate-800/80 border-slate-700 text-slate-500'
             }`}>
-              <Cloud className="w-4 h-4" />
+              {currentUser ? <Cloud className="w-4 h-4" /> : <CloudOff className="w-4 h-4" />}
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-white text-[11px]">Firestore Cloud Sync</span>
+                <span className="font-bold text-white text-[11px]">User Cloud Vault</span>
                 <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
-                  cloudSyncEnabled 
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(0,242,254,0.2)]' 
-                    : 'bg-slate-800 text-slate-500'
+                  currentUser
+                    ? cloudSyncEnabled
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(0,242,254,0.2)]'
+                      : 'bg-slate-800 text-slate-400'
+                    : 'bg-amber-950/50 text-amber-400 border border-amber-600/40'
                 }`}>
-                  {cloudSyncEnabled ? 'ACTIVE' : 'OFF'}
+                  {currentUser ? (cloudSyncEnabled ? 'ACTIVE' : 'PAUSED') : 'SIGN-IN REQUIRED'}
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-mono">
-                {syncStatusText || (cloudSyncEnabled ? 'Auto-syncs local vault to Firestore cloud' : 'Push local vault to Firestore cloud')}
+                {syncStatusText || (
+                  currentUser
+                    ? (cloudSyncEnabled ? `Syncing to users/${currentUser.uid.slice(0, 6)}.../vault` : `Destination: users/${currentUser.uid.slice(0, 6)}.../vault`)
+                    : 'Sync unavailable: Sign in to enable private user vault'
+                )}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {cloudSyncEnabled && (
+            {!currentUser ? (
               <button
                 type="button"
-                onClick={handleManualSync}
-                disabled={isSyncing}
-                className="p-1 rounded-md text-cyan-400 hover:text-cyan-300 hover:bg-slate-800 transition"
-                title="Trigger Immediate Cloud Push"
+                onClick={handleSignIn}
+                disabled={isAuthenticating}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 text-[10px] font-mono font-bold transition shadow-sm"
+                title="Sign in with Google Workspace to enable Firestore vault sync"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                <LogIn className="w-3 h-3" />
+                <span>{isAuthenticating ? 'Signing in...' : 'Sign In'}</span>
               </button>
+            ) : (
+              <>
+                {cloudSyncEnabled && (
+                  <button
+                    type="button"
+                    onClick={handleManualSync}
+                    disabled={isSyncing}
+                    className="p-1 rounded-md text-cyan-400 hover:text-cyan-300 hover:bg-slate-800 transition"
+                    title="Trigger Immediate Cloud Push"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleToggleCloudSync}
+                  className={`transition ${cloudSyncEnabled ? 'text-cyan-400 hover:text-cyan-300' : 'text-slate-600 hover:text-slate-400'}`}
+                  title={cloudSyncEnabled ? 'Disable User Cloud Sync' : 'Enable User Cloud Sync & Push Assets'}
+                >
+                  {cloudSyncEnabled ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
+                </button>
+              </>
             )}
-            <button
-              type="button"
-              onClick={handleToggleCloudSync}
-              className={`transition ${cloudSyncEnabled ? 'text-cyan-400 hover:text-cyan-300' : 'text-slate-600 hover:text-slate-400'}`}
-              title={cloudSyncEnabled ? 'Disable Firestore Cloud Sync' : 'Enable Firestore Cloud Sync & Push Assets'}
-            >
-              {cloudSyncEnabled ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
-            </button>
           </div>
         </div>
 
