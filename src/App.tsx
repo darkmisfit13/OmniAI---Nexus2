@@ -407,30 +407,44 @@ export default function App() {
     triggerTypingState();
   };
 
+  const isAutoModeRef = useRef(isAutoMode);
+  isAutoModeRef.current = isAutoMode;
+
+  const autoPilotToneRef = useRef(autoPilotTone);
+  autoPilotToneRef.current = autoPilotTone;
+
+  const lastAnsweredMsgIndexRef = useRef<number>(-1);
+
   const handleEnter = useCallback((text?: string, isAutoPilot = false) => {
     const final = text || currentDraftText;
     if (!final.trim()) return;
 
-    currentScenario.messages.push({
-      sender: 'me',
-      text: final,
-      time: 'Just now',
-      isAutoPilot,
-    });
+    setCurrentScenario((prev) => ({
+      ...prev,
+      messages: [
+        ...prev.messages,
+        {
+          sender: 'me',
+          text: final,
+          time: 'Just now',
+          isAutoPilot,
+        },
+      ],
+    }));
     setCurrentDraftText('');
     setOrbPhase('suggesting');
 
     setTimeout(() => {
       analyzeActiveScreen();
-    }, 900);
-  }, [currentDraftText, currentScenario, analyzeActiveScreen]);
+    }, 450);
+  }, [currentDraftText, analyzeActiveScreen]);
 
   // Trigger autonomous auto-dispatch with countdown
   const triggerAutoPilotDispatch = useCallback(
     (target: string, incomingContext: string, customReply?: string) => {
       const chosenReply =
         customReply ||
-        analysisData.suggestionTrio[autoPilotTone] ||
+        analysisData.suggestionTrio[autoPilotToneRef.current] ||
         analysisData.suggestedReplies[0] ||
         'Locking in execution immediately.';
 
@@ -466,7 +480,7 @@ export default function App() {
                 id: `auto_${Date.now()}`,
                 category: 'Auto-Pilot',
                 label: `Auto-Answered: ${target}`,
-                detail: `Autonomous dispatch (${autoPilotTone.toUpperCase()}): "${chosenReply}"`,
+                detail: `Autonomous dispatch (${autoPilotToneRef.current.toUpperCase()}): "${chosenReply}"`,
                 timestamp: nowStr,
               },
               ...prev.telemetryNotes,
@@ -475,7 +489,7 @@ export default function App() {
         }
       }, 1000);
     },
-    [autoPilotTone, analysisData, handleEnter]
+    [analysisData, handleEnter]
   );
 
   const handleCancelAutoDispatch = useCallback(() => {
@@ -519,12 +533,8 @@ export default function App() {
       const next = !prev;
       if (next) {
         setOrbPhase('auto');
-        const lastMsg = currentScenario.messages[currentScenario.messages.length - 1];
-        if (lastMsg && lastMsg.sender === 'them') {
-          setTimeout(() => {
-            triggerAutoPilotDispatch(currentScenario.appHeader.title, lastMsg.text);
-          }, 400);
-        }
+        // Reset answered index to trigger on any unhandled incoming message immediately
+        lastAnsweredMsgIndexRef.current = -1;
       } else {
         if (autoCountdownTimerRef.current) {
           clearInterval(autoCountdownTimerRef.current);
@@ -534,7 +544,29 @@ export default function App() {
       }
       return next;
     });
-  }, [currentScenario, triggerAutoPilotDispatch]);
+  }, []);
+
+  // Continuous Auto-Pilot Watcher: Automatically answers subsequent incoming messages without manual toggling
+  useEffect(() => {
+    if (!isAutoMode) return;
+    const msgs = currentScenario.messages;
+    const lastIdx = msgs.length - 1;
+    if (lastIdx < 0) return;
+    const lastMsg = msgs[lastIdx];
+
+    if (lastMsg && lastMsg.sender === 'them' && lastAnsweredMsgIndexRef.current !== lastIdx) {
+      lastAnsweredMsgIndexRef.current = lastIdx;
+
+      const timer = setTimeout(async () => {
+        const res = await analyzeActiveScreen();
+        const toneKey = autoPilotToneRef.current;
+        const candidate = res?.suggestionTrio?.[toneKey] || res?.suggestedReplies?.[0] || 'Acknowledged and proceeding.';
+        triggerAutoPilotDispatch(currentScenario.appHeader.title, lastMsg.text, candidate);
+      }, 450);
+
+      return () => clearTimeout(timer);
+    }
+  }, [currentScenario.messages, isAutoMode, currentScenario.appHeader.title, analyzeActiveScreen, triggerAutoPilotDispatch]);
 
   // Simulate new incoming counterpart message for testing Auto Mode
   const handleSimulateIncomingMessage = useCallback(() => {
@@ -542,43 +574,47 @@ export default function App() {
       work_slack: [
         'Client VP is pinging me again. What is our fallback plan if staging isn’t stable by 11:00?',
         'Can you confirm when the database migration script completes on staging?',
+        'Team lead asked if the health check endpoints are logging 200 OK?',
+        'Understood. How soon can we notify the client that everything is live?',
       ],
       dating_hinge: [
         'Haha deal! Next question: what is your go-to midnight creative playlist when you are locked in the lab?',
         'Are you more of an impulsive road trip person or meticulous planner?',
+        'What is your favorite late-night spot in the city when you need inspiration?',
       ],
       client_dispute: [
         'Can you confirm in writing that our payment gateway won’t incur any recurring penalty for this charge?',
         'Thank you for looking into this. Please send the adjusted invoice as soon as finance approves.',
+        'Is there any other line item we should review before signing off on the audit?',
       ],
       terminal_bug: [
         'Crash monitor ping: port 8080 reporting high connection drop rate. Check auth middleware overhead.',
         'Core dump written to /var/log/crash.log. Session validation taking >400ms.',
+        'High memory watermark hit on pod 3. Should we trigger automated pod restart?',
       ],
     };
 
     const options = counterpartReplies[currentScenario.id] || [
       'Hey, got a quick second to sync on our next steps?',
       'Just following up on your last update, let me know when ready.',
+      'Could you confirm the next milestone timing?',
     ];
     const randomReply = options[Math.floor(Math.random() * options.length)];
 
-    currentScenario.messages.push({
-      sender: 'them',
-      text: randomReply,
-      time: 'Just now',
-    });
+    setCurrentScenario((prev) => ({
+      ...prev,
+      messages: [
+        ...prev.messages,
+        {
+          sender: 'them',
+          text: randomReply,
+          time: 'Just now',
+        },
+      ],
+    }));
 
     setOrbPhase('observing');
-
-    analyzeActiveScreen().then((res) => {
-      if (isAutoMode) {
-        const toneKey = autoPilotTone;
-        const candidate = res?.suggestionTrio?.[toneKey] || res?.suggestedReplies?.[0];
-        triggerAutoPilotDispatch(currentScenario.appHeader.title, randomReply, candidate);
-      }
-    });
-  }, [currentScenario, isAutoMode, autoPilotTone, analyzeActiveScreen, triggerAutoPilotDispatch]);
+  }, [currentScenario.id]);
 
   const handleLoadIntoScreenSimulator = (title: string, body: string, sender: string) => {
     const customScenario: ScreenScenario = {

@@ -112,6 +112,7 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   // Supabase User Authentication State (Single backend for shared account data)
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'Syncing' | 'Synced' | 'Error'>('Synced');
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
   const [vaultQueryError, setVaultQueryError] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -147,6 +148,7 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   // Fetch private Vault items from Supabase (enforces RLS: auth.uid() = user_id)
   const fetchUserVault = useCallback(async (userId: string) => {
     setIsSyncing(true);
+    setSyncStatus('Syncing');
     setSyncStatusText('Loading your private vault from Supabase...');
     setVaultQueryError(null);
     try {
@@ -158,11 +160,13 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
         // If no items in Supabase yet, keep initial sample assets
         setSyncStatusText('Connected to Supabase (RLS Active)');
       }
+      setSyncStatus('Synced');
     } catch (err: any) {
       console.error('[VaultAssetsDrawer] Supabase Vault query failed:', err);
       const message = err?.message || 'Database query failed';
       setVaultQueryError(message);
       setSyncStatusText('Vault query failed (Check database table)');
+      setSyncStatus('Error');
     } finally {
       setIsSyncing(false);
     }
@@ -179,12 +183,15 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
     // 2. Persist to Supabase if authenticated
     if (supabaseUser) {
       setIsSyncing(true);
+      setSyncStatus('Syncing');
       try {
         await saveVaultAsset(supabaseUser.id, asset);
         setSyncStatusText('Saved to Supabase with Row Level Security');
+        setSyncStatus('Synced');
       } catch (err: any) {
         console.warn('[VaultAssetsDrawer] Failed to save to Supabase:', err);
         setSyncStatusText('Saved locally (Supabase write pending)');
+        setSyncStatus('Error');
       } finally {
         setIsSyncing(false);
         setTimeout(() => setSyncStatusText(null), 3000);
@@ -201,11 +208,14 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
 
     if (supabaseUser) {
       setIsSyncing(true);
+      setSyncStatus('Syncing');
       try {
         await deleteVaultAsset(supabaseUser.id, id);
         setSyncStatusText('Deleted from Supabase');
+        setSyncStatus('Synced');
       } catch (err: any) {
         console.warn('[VaultAssetsDrawer] Failed to delete from Supabase:', err);
+        setSyncStatus('Error');
       } finally {
         setIsSyncing(false);
         setTimeout(() => setSyncStatusText(null), 2500);
@@ -361,7 +371,7 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
               {supabaseUser ? <ShieldCheck className="w-4 h-4" /> : <Database className="w-4 h-4" />}
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-bold text-white text-[11px]">Supabase Vault Sync</span>
                 <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
                   supabaseUser
@@ -370,6 +380,31 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
                 }`}>
                   {supabaseUser ? 'RLS ENFORCED' : 'LOCAL GUEST'}
                 </span>
+                
+                {/* Visual Synchronization Status Indicator */}
+                <div 
+                  className="flex items-center gap-1 shrink-0" 
+                  title={`Supabase Persistence Status: ${syncStatus}`}
+                >
+                  {syncStatus === 'Syncing' && (
+                    <span className="flex items-center gap-1 text-[9px] font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.25)] animate-pulse">
+                      <RefreshCw className="w-2.5 h-2.5 text-amber-400 animate-spin" />
+                      <span>Syncing</span>
+                    </span>
+                  )}
+                  {syncStatus === 'Synced' && (
+                    <span className="flex items-center gap-1 text-[9px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/40 px-2 py-0.5 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.2)]">
+                      <Check className="w-2.5 h-2.5 text-emerald-400" />
+                      <span>Synced</span>
+                    </span>
+                  )}
+                  {syncStatus === 'Error' && (
+                    <span className="flex items-center gap-1 text-[9px] font-mono font-bold text-rose-300 bg-rose-500/20 border border-rose-500/50 px-2 py-0.5 rounded-full shadow-[0_0_8px_rgba(244,63,94,0.3)] animate-pulse">
+                      <AlertCircle className="w-2.5 h-2.5 text-rose-400" />
+                      <span>Error</span>
+                    </span>
+                  )}
+                </div>
               </div>
               <p className="text-[10px] text-slate-400 font-mono truncate">
                 {syncStatusText || (

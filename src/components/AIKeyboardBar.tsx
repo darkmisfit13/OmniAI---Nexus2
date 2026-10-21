@@ -272,22 +272,6 @@ export const AIKeyboardBar: React.FC<AIKeyboardBarProps> = ({
             </span>
           </div>
 
-          {/* Autonomous Auto-Pilot Mode Toggle */}
-          {onToggleAutoMode && (
-            <button
-              onClick={onToggleAutoMode}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold transition shrink-0 ${
-                isAutoMode
-                  ? 'bg-gradient-to-r from-[#00f2fe]/20 to-[#7f00ff]/30 text-[#00f2fe] border border-[#00f2fe] shadow-[0_0_12px_rgba(0,242,254,0.4)] animate-pulse'
-                  : 'bg-black/90 text-slate-500 border border-white/10 hover:text-slate-300'
-              }`}
-              title="Toggle Autonomous Auto-Pilot Mode (Omni Key answers for you)"
-            >
-              <Zap className={`w-3 h-3 ${isAutoMode ? 'text-[#00f2fe] animate-bounce' : 'text-slate-500'}`} />
-              <span>{isAutoMode ? 'AUTO: ON' : 'AUTO: OFF'}</span>
-            </button>
-          )}
-
           {/* On-Device NPU Status Badge */}
           {onToggleOnDeviceMode && (
             <button

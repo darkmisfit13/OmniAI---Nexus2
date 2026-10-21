@@ -5,6 +5,47 @@ export type VoiceState = 'idle' | 'speaking' | 'listening';
 
 type VoiceCallback = (state: VoiceState, text?: string) => void;
 
+export interface VoiceRecordingSample {
+  id: string;
+  phrase: string;
+  durationSec: number;
+  recordedAt: string;
+  audioBlobUrl?: string;
+}
+
+export interface ClonedVoiceProfile {
+  id: string;
+  name: string;
+  isCalibrated: boolean;
+  isActive: boolean;
+  samples: VoiceRecordingSample[];
+  extractedMetrics: {
+    pitchOffset: number; // e.g. -0.12 (calibrated user pitch)
+    rate: number;        // e.g. 1.02 (calibrated user cadence)
+    frequencyHz: number; // e.g. 138 Hz
+    timbreProfile: string; // e.g. "Warm Dynamic Resonance"
+    clarityScore: number;  // e.g. 98.4%
+    resonanceBand: string; // e.g. "Adaptive Neural Acoustic Map"
+  };
+  lastCalibratedAt?: string;
+}
+
+export const defaultClonedVoiceProfile: ClonedVoiceProfile = {
+  id: 'user_voice_clone_01',
+  name: 'My Personal Voice Clone',
+  isCalibrated: false,
+  isActive: false,
+  samples: [],
+  extractedMetrics: {
+    pitchOffset: 0.0,
+    rate: 1.0,
+    frequencyHz: 135,
+    timbreProfile: 'Neutral Dynamic Resonance',
+    clarityScore: 97.5,
+    resonanceBand: 'Balanced Human Speech Profile',
+  },
+};
+
 // Omni Speech Engine Pipeline Configuration (Deep, hushed, compressed nocturnal profile)
 export const shadowVoiceConfig = {
   voiceId: "omni-shadow-stealth-01", 
@@ -35,6 +76,7 @@ export class OmniVoiceEngine {
   private activeProfileId: string = shadowVoiceConfig.voiceId;
   private engineTunings = { ...shadowVoiceConfig.engineParameters };
   private spatialAudioConfig = { ...shadowVoiceConfig.spatialAudio };
+  private clonedProfile: ClonedVoiceProfile = { ...defaultClonedVoiceProfile };
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -48,6 +90,16 @@ export class OmniVoiceEngine {
         this.selectedVoiceURI = savedVoice;
       }
 
+      // Load saved cloned voice profile
+      try {
+        const savedClone = localStorage.getItem('omni_cloned_voice_profile');
+        if (savedClone) {
+          this.clonedProfile = JSON.parse(savedClone);
+        }
+      } catch (err) {
+        console.warn('Could not parse cloned voice profile:', err);
+      }
+
       // Pre-warm SpeechSynthesis voices and listen for changes
       if ('speechSynthesis' in window) {
         window.speechSynthesis.onvoiceschanged = () => {
@@ -57,6 +109,26 @@ export class OmniVoiceEngine {
       }
     }
     initializeShadowVoice(this);
+  }
+
+  public getClonedVoiceProfile(): ClonedVoiceProfile {
+    return { ...this.clonedProfile };
+  }
+
+  public saveClonedVoiceProfile(profile: ClonedVoiceProfile): void {
+    this.clonedProfile = { ...profile };
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('omni_cloned_voice_profile', JSON.stringify(profile));
+    }
+  }
+
+  public isClonedVoiceActive(): boolean {
+    return this.clonedProfile.isCalibrated && this.clonedProfile.isActive;
+  }
+
+  public setClonedVoiceActive(val: boolean): void {
+    this.clonedProfile.isActive = val;
+    this.saveClonedVoiceProfile(this.clonedProfile);
   }
 
   public setVoiceProfile(voiceId: string): void {
@@ -213,6 +285,38 @@ export class OmniVoiceEngine {
     window.speechSynthesis.speak(utterance);
   }
 
+  public previewClonedVoice(sampleText = 'Hi, this is your voice clone speaking. My pitch, cadence, and tone match yours.'): void {
+    if (!this.isSpeechSynthesisSupported()) return;
+    this.stop();
+
+    const utterance = new SpeechSynthesisUtterance(sampleText);
+    const voice = this.getPreferredVoice();
+    if (voice) {
+      utterance.voice = voice;
+    }
+
+    const pitch = Math.max(0.1, 1.0 + (this.clonedProfile.extractedMetrics.pitchOffset || 0));
+    const rate = Math.max(0.5, Math.min(2.0, this.clonedProfile.extractedMetrics.rate || 1.0));
+
+    utterance.pitch = pitch;
+    utterance.rate = rate;
+    utterance.volume = 1.0;
+    this.playSonicPulse(580, 0.06);
+
+    utterance.onstart = () => this.notify('speaking', sampleText);
+    utterance.onend = () => {
+      this.notify('idle');
+      this.currentUtterance = null;
+    };
+    utterance.onerror = () => {
+      this.notify('idle');
+      this.currentUtterance = null;
+    };
+
+    this.currentUtterance = utterance;
+    window.speechSynthesis.speak(utterance);
+  }
+
   // Play subtle mechanical / cybernetic tone using Web Audio API as audio cue
   private playSonicPulse(frequency: number = 380, duration: number = 0.08) {
     try {
@@ -272,10 +376,17 @@ export class OmniVoiceEngine {
       utterance.voice = voice;
     }
 
-    // Shadow Voice calibration: -0.15 pitch shift (0.85 effective) for deep bass resonance, 0.95 calm rate, and compression
-    const calibratedPitch = Math.max(0.1, 1.0 + (this.engineTunings.pitch ?? -0.15));
+    // Check if user cloned voice is active
+    let calibratedPitch = Math.max(0.1, 1.0 + (this.engineTunings.pitch ?? -0.15));
+    let calibratedRate = this.engineTunings.rate ?? 0.95;
+
+    if (this.isClonedVoiceActive() && this.clonedProfile.isCalibrated) {
+      calibratedPitch = Math.max(0.1, 1.0 + this.clonedProfile.extractedMetrics.pitchOffset);
+      calibratedRate = Math.max(0.5, Math.min(2.0, this.clonedProfile.extractedMetrics.rate));
+    }
+
     utterance.pitch = options?.pitch ?? calibratedPitch;
-    utterance.rate = options?.rate ?? (this.engineTunings.rate ?? 0.95);
+    utterance.rate = options?.rate ?? calibratedRate;
     utterance.volume = this.engineTunings.volume ?? 1.0;
 
     utterance.onstart = () => {
