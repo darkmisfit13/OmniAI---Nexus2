@@ -203,6 +203,77 @@ let managedUsersStore = [
   },
 ];
 
+// Server-Side Token Authorization and Tracking Gate (Step 3)
+export const STUDIO_TOKEN_COSTS: Record<string, number> = {
+  DIGITAL_SHADOW: 5,   // Multi-AI consensus routing
+  PHANTOM_CUT: 2,      // Mobile generative layout
+  RESONANCE: 3,        // Audio/stem processing
+  OBSIDIAN_CANVAS: 2,  // Object removal and brush overlays
+  THE_FOUNDRY: 10,     // Full-stack code compiles
+  TERMINAL_MIND: 2,    // Code debugging and logic patches
+  VOID_ENGINE: 8,      // 3D vector and shader passes
+  SAFE_HORIZON: 1,     // Overlay visibility checks
+  PRISM_LAB: 4,        // UI assembly
+  BLUEPRINT: 3,        // Database structure designs
+  KINETIC: 2,          // Webhook trigger loops
+  NEXUS: 2,            // Secure GitHub handshakes
+  NIGHTWATCH: 4        // Live property auditing
+};
+
+// Database mock/store for wallet balances
+const userWallets: Record<string, { tokens: number; tier: string }> = {
+  'usr-1': { tokens: 999999, tier: 'Enterprise' },
+  'usr-2': { tokens: 18450, tier: 'Studio Ultra' },
+  'default': { tokens: 500, tier: 'Pro' }
+};
+
+const database = {
+  async getWalletBalance(userId?: string) {
+    const id = userId || 'default';
+    if (!userWallets[id]) {
+      userWallets[id] = { tokens: 500, tier: 'Pro' };
+    }
+    return userWallets[id];
+  },
+  async deductTokens(userId: string | undefined, amount: number) {
+    const wallet = await this.getWalletBalance(userId);
+    wallet.tokens = Math.max(0, wallet.tokens - amount);
+    return wallet;
+  },
+  async addTokens(userId: string | undefined, amount: number) {
+    const wallet = await this.getWalletBalance(userId);
+    wallet.tokens += amount;
+    return wallet;
+  }
+};
+
+export async function authorizeOmniRequest(req: Request, res: Response, next: any) {
+  const { userId, studioKey } = req.body || {};
+  const normalizedKey = (studioKey || 'DIGITAL_SHADOW').toUpperCase().replace(/[\s-]/g, '_');
+  const tokenCost = STUDIO_TOKEN_COSTS[normalizedKey] || 1;
+
+  try {
+    // Check account status against DB
+    const userWallet = await database.getWalletBalance(userId);
+
+    if (userWallet.tokens < tokenCost) {
+      return res.status(402).json({
+        error: "Insufficient Energy Matrix Tokens",
+        required: tokenCost,
+        current: userWallet.tokens,
+        action: "Upgrade to Shadow Elite or buy immediate compute packs."
+      });
+    }
+
+    // Deduct computational tokens and proceed
+    await database.deductTokens(userId, tokenCost);
+    (req as any).authorizedTokenCost = tokenCost;
+    next();
+  } catch (error) {
+    return res.status(500).json({ error: "Core authorization sync failure." });
+  }
+}
+
 // Health Check
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({
@@ -211,6 +282,21 @@ app.get('/api/health', (req: Request, res: Response) => {
     geminiConfigured: !!apiKey,
     activeEngine: 'Omni Core v4.2',
     activeLLMCascadeCount: activeLLMCascade.filter((m) => m.enabled).length,
+  });
+});
+
+// Wallet token verification and status endpoints
+app.get('/api/wallet', async (req: Request, res: Response) => {
+  const userId = (req.query.userId as string) || 'default';
+  const wallet = await database.getWalletBalance(userId);
+  res.json({ userId, tokens: wallet.tokens, tier: wallet.tier, tokenCosts: STUDIO_TOKEN_COSTS });
+});
+
+app.post('/api/wallet/authorize', authorizeOmniRequest, (req: Request, res: Response) => {
+  res.json({
+    authorized: true,
+    deducted: (req as any).authorizedTokenCost,
+    message: 'Energy matrix token authorized for studio compute.'
   });
 });
 

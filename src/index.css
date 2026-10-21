@@ -137,3 +137,73 @@ html, body, #root {
   border-color: #7f00ff;
   box-shadow: 0 0 16px rgba(127, 0, 255, 0.5);
 }
+
+/* Omni Mobile Core Grid Layout - Eliminating Desktop Overlap */
+.omni-mobile-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background-color: #030303; /* Deep Void Black */
+  color: #e5e5e5;
+  overflow: hidden;
+  font-family: 'SF Pro Display', -apple-system, sans-serif;
+}
+
+/* Studio Canvas Container - Fixes overlap and text bleeding */
+.studio-canvas {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 90px; /* Essential padding so bottom nav doesn't clip content */
+}
+
+/* Unified Card Component for Mobile Viewports */
+.omni-studio-card {
+  background: linear-gradient(145deg, #0d0d0d, #070707);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Mobile Preview Window - Forces CapCut/Suno styles to behave on screen */
+.studio-preview-viewport {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #000000;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+/* Mobile Interactive Controls and Slider Rows */
+.omni-control-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.omni-mobile-btn {
+  height: 48px; /* Ideal thumb touch target size */
+  background-color: #111111;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #ffffff;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+
+.omni-mobile-btn:active {
+  background-color: #222222; /* Haptic press state visual feedback */
+}

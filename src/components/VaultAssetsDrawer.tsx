@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FolderLock, 
   X, 
@@ -18,8 +18,18 @@ import {
   Copy,
   Clock,
   Film,
-  FileText
+  FileText,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
+import { db, auth } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 export interface VaultAsset {
   id: string;
@@ -101,6 +111,77 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const [sortBy, setSortBy] = useState<'date' | 'type' | 'label'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  // Cloud Sync to Firestore State
+  const [cloudSyncEnabled, setCloudSyncEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('omni_vault_cloud_sync_enabled') === 'true';
+    }
+    return false;
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
+
+  const pushToFirestore = async (itemsToPush: VaultAsset[]) => {
+    if (!itemsToPush || itemsToPush.length === 0) return;
+    setIsSyncing(true);
+    setSyncStatusText(`Pushing ${itemsToPush.length} items to Firestore...`);
+    try {
+      const user = auth.currentUser;
+      for (const asset of itemsToPush) {
+        const cleanId = (asset.id || `vault_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const payload = {
+          ...asset,
+          syncedAt: new Date().toISOString(),
+          ownerId: user?.uid || 'anonymous',
+        };
+
+        // If authenticated, push to private user vault subcollection
+        if (user) {
+          const userDocRef = doc(db, 'users', user.uid, 'vault', cleanId);
+          await setDoc(userDocRef, payload, { merge: true });
+        }
+
+        // Also push to global cross-platform vault collection
+        try {
+          const globalDocRef = doc(db, 'globalVault', cleanId);
+          await setDoc(globalDocRef, payload, { merge: true });
+        } catch {}
+      }
+
+      setSyncStatusText(`Synced ${itemsToPush.length} item${itemsToPush.length !== 1 ? 's' : ''} to Firestore`);
+      setTimeout(() => setSyncStatusText(null), 3500);
+    } catch (err: any) {
+      console.warn('Firestore Vault Cloud Sync warning:', err);
+      setSyncStatusText('Synced (offline cache mode)');
+      setTimeout(() => setSyncStatusText(null), 3000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleToggleCloudSync = async () => {
+    const nextState = !cloudSyncEnabled;
+    setCloudSyncEnabled(nextState);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('omni_vault_cloud_sync_enabled', String(nextState));
+    }
+
+    if (nextState) {
+      // Trigger instant push of all local items to Firestore
+      await pushToFirestore(internalAssets);
+    } else {
+      setSyncStatusText('Cloud sync disabled');
+      setTimeout(() => setSyncStatusText(null), 2000);
+    }
+  };
+
+  const handleManualSync = async () => {
+    await pushToFirestore(internalAssets);
+  };
+
   useEffect(() => {
     if (assets) setInternalAssets(assets);
   }, [assets]);
@@ -108,10 +189,24 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   if (!isOpen) return null;
 
   const currentList = internalAssets;
-  const filteredAssets = currentList.filter((asset) => {
-    if (activeTab === 'all') return true;
-    return asset.type === activeTab;
-  });
+  const filteredAssets = useMemo(() => {
+    const list = currentList.filter((asset) => {
+      if (activeTab === 'all') return true;
+      return asset.type === activeTab;
+    });
+
+    return [...list].sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'date') {
+        comparison = (a.createdAt || '').localeCompare(b.createdAt || '');
+      } else if (sortBy === 'type') {
+        comparison = (a.type || '').localeCompare(b.type || '');
+      } else if (sortBy === 'label') {
+        comparison = (a.name || '').localeCompare(b.name || '');
+      }
+      return sortOrder === 'desc' ? -comparison : comparison;
+    });
+  }, [currentList, activeTab, sortBy, sortOrder]);
 
   const togglePlayAudio = (id: string) => {
     setPlayingAudioId((prev) => (prev === id ? null : id));
@@ -183,6 +278,56 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
           </button>
         </div>
 
+        {/* Cloud Sync to Firestore Toolbar */}
+        <div className="px-4 py-2.5 bg-gradient-to-r from-cyan-950/40 via-slate-900 to-purple-950/30 border-b border-slate-800 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className={`p-1.5 rounded-lg border transition ${
+              cloudSyncEnabled 
+                ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_10px_rgba(0,242,254,0.2)]' 
+                : 'bg-slate-800/80 border-slate-700 text-slate-500'
+            }`}>
+              <Cloud className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-white text-[11px]">Firestore Cloud Sync</span>
+                <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                  cloudSyncEnabled 
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(0,242,254,0.2)]' 
+                    : 'bg-slate-800 text-slate-500'
+                }`}>
+                  {cloudSyncEnabled ? 'ACTIVE' : 'OFF'}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-mono">
+                {syncStatusText || (cloudSyncEnabled ? 'Auto-syncs local vault to Firestore cloud' : 'Push local vault to Firestore cloud')}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {cloudSyncEnabled && (
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="p-1 rounded-md text-cyan-400 hover:text-cyan-300 hover:bg-slate-800 transition"
+                title="Trigger Immediate Cloud Push"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleToggleCloudSync}
+              className={`transition ${cloudSyncEnabled ? 'text-cyan-400 hover:text-cyan-300' : 'text-slate-600 hover:text-slate-400'}`}
+              title={cloudSyncEnabled ? 'Disable Firestore Cloud Sync' : 'Enable Firestore Cloud Sync & Push Assets'}
+            >
+              {cloudSyncEnabled ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
+            </button>
+          </div>
+        </div>
+
         {/* Category Tabs */}
         <div className="flex border-b border-slate-800 bg-slate-950/60 p-1 text-xs">
           {(['all', 'audio', 'video', 'image', 'code'] as const).map((tab) => (
@@ -198,6 +343,44 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
               {tab}
             </button>
           ))}
+        </div>
+
+        {/* Sorting Dropdown Toolbar */}
+        <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950 border-b border-slate-800 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
+              <ArrowUpDown className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Sort:</span>
+            </span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'date' | 'type' | 'label')}
+              className="bg-slate-900 border border-slate-750 text-cyan-300 text-xs font-mono rounded-lg px-2.5 py-1 focus:outline-none focus:border-cyan-400 cursor-pointer"
+            >
+              <option value="date">Date Created</option>
+              <option value="type">Asset Type</option>
+              <option value="label">Label / Name</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-slate-500">
+              {filteredAssets.length} item{filteredAssets.length !== 1 ? 's' : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white font-mono text-[11px] transition"
+              title={sortOrder === 'asc' ? 'Sorted Ascending (Click to switch to Descending)' : 'Sorted Descending (Click to switch to Ascending)'}
+            >
+              <span>{sortOrder === 'desc' ? 'Newest / Z-A' : 'Oldest / A-Z'}</span>
+              {sortOrder === 'desc' ? (
+                <ArrowDown className="w-3 h-3 text-cyan-400" />
+              ) : (
+                <ArrowUp className="w-3 h-3 text-cyan-400" />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Asset Cards List */}

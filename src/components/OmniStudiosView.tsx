@@ -93,15 +93,15 @@ export const OmniStudiosView: React.FC<OmniStudiosViewProps> = ({
   const Icon = meta.icon;
 
   return (
-    <div className="h-full flex flex-col bg-[#07090e] text-slate-100 overflow-hidden font-sans">
+    <div className="omni-mobile-wrapper h-full flex flex-col bg-[#030303] text-slate-100 overflow-hidden font-sans">
       
       {/* Sleek Mobile Studio Top Bar with Back Button */}
-      <div className="h-11 px-3 bg-[#0a0d16] border-b border-slate-800 flex items-center justify-between flex-shrink-0">
+      <div className="h-12 px-3 bg-[#0a0d16] border-b border-white/5 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
           {onBackToHome && (
             <button
               onClick={onBackToHome}
-              className="p-1 -ml-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all flex items-center gap-0.5 text-xs font-semibold"
+              className="p-1.5 -ml-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all flex items-center gap-0.5 text-xs font-semibold"
             >
               <ChevronLeft className="w-4 h-4" />
               <span>Back</span>
@@ -121,7 +121,7 @@ export const OmniStudiosView: React.FC<OmniStudiosViewProps> = ({
           {onOpenCompanion && (
             <button
               onClick={onOpenCompanion}
-              className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-950/90 to-indigo-950/90 border border-cyan-500/50 hover:border-cyan-400 text-cyan-300 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-950/90 to-indigo-950/90 border border-cyan-500/50 hover:border-cyan-400 text-cyan-300 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
               title="Open OmniAI Studio Companion"
             >
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
@@ -133,7 +133,7 @@ export const OmniStudiosView: React.FC<OmniStudiosViewProps> = ({
           {onOpenSidebar && (
             <button
               onClick={onOpenSidebar}
-              className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-cyan-300 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-cyan-300 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm"
             >
               <Layers className="w-3 h-3 text-cyan-400" />
               <span>Switch Studio</span>
@@ -142,8 +142,8 @@ export const OmniStudiosView: React.FC<OmniStudiosViewProps> = ({
         </div>
       </div>
 
-      {/* Render the Active Studio Component */}
-      <div className="flex-1 overflow-hidden">
+      {/* Render the Active Studio Component inside studio-canvas container */}
+      <div className="studio-canvas flex-1 overflow-y-auto">
         {selectedStudio === 'motion' && <OmniMotionStudio onSaveToVault={onSaveToVault} />}
         {selectedStudio === 'beat' && <OmniBeatStudio onSaveToVault={onSaveToVault} />}
         {selectedStudio === 'wave' && <OmniWaveStudio onSaveToVault={onSaveToVault} />}

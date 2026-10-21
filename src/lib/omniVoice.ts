@@ -5,7 +5,25 @@ export type VoiceState = 'idle' | 'speaking' | 'listening';
 
 type VoiceCallback = (state: VoiceState, text?: string) => void;
 
-class OmniVoiceEngine {
+// Omni Speech Engine Pipeline Configuration (Deep, hushed, compressed nocturnal profile)
+export const shadowVoiceConfig = {
+  voiceId: "omni-shadow-stealth-01", 
+  engineParameters: {
+    pitch: -0.15,            // Shifts frequencies down for bass resonance
+    rate: 0.95,              // Deliberate, calm pacing
+    volume: 1.0,
+    inflectionVolatility: 0.35, // Flattened tone, eliminates theatrical British accents
+    compressionRatio: 4.2     // Aggressive vocal compression to keep speech clean and close
+  },
+  spatialAudio: {
+    enabled: true,
+    renderMode: "binaural-headphone",
+    binauralDelayMs: 5.0,     // Introduces phase displacement to make the voice sound inside the skull
+    reverbWetLevel: 0.08      // Slight ambient echo to fit the "Void" theme
+  }
+};
+
+export class OmniVoiceEngine {
   private isEnabled: boolean = true;
   private selectedVoiceURI: string | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
@@ -14,6 +32,9 @@ class OmniVoiceEngine {
   private recognition: any = null;
   private isListening: boolean = false;
   private activeState: VoiceState = 'idle';
+  private activeProfileId: string = shadowVoiceConfig.voiceId;
+  private engineTunings = { ...shadowVoiceConfig.engineParameters };
+  private spatialAudioConfig = { ...shadowVoiceConfig.spatialAudio };
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -35,6 +56,23 @@ class OmniVoiceEngine {
         };
       }
     }
+    initializeShadowVoice(this);
+  }
+
+  public setVoiceProfile(voiceId: string): void {
+    this.activeProfileId = voiceId;
+  }
+
+  public updateTunings(params: Partial<typeof shadowVoiceConfig.engineParameters>): void {
+    this.engineTunings = { ...this.engineTunings, ...params };
+  }
+
+  public applySpatialDSP(dsp: Partial<typeof shadowVoiceConfig.spatialAudio>): void {
+    this.spatialAudioConfig = { ...this.spatialAudioConfig, ...dsp };
+  }
+
+  public getVoiceProfile(): string {
+    return this.activeProfileId;
   }
 
   public subscribe(cb: VoiceCallback): () => void {
@@ -120,16 +158,14 @@ class OmniVoiceEngine {
       if (match) return match;
     }
 
-    // 2. Default fallback: prefer stoic, deep, clear English voices
+    // 2. Default fallback: deep, hushed, compressed American/nocturnal voices (eliminates theatrical British accents)
     const preferredNames = [
-      'Daniel',
-      'Aaron',
-      'Alex',
-      'Google UK English Male',
       'Microsoft David',
-      'Arthur',
-      'Fred',
-      'en-GB',
+      'Aaron',
+      'Google US English',
+      'Alex',
+      'Nathan',
+      'Samantha',
       'en-US'
     ];
 
@@ -236,10 +272,11 @@ class OmniVoiceEngine {
       utterance.voice = voice;
     }
 
-    // Nocturnal Cool calibration: slightly deeper pitch, stoic calm cadence
-    utterance.pitch = options?.pitch ?? 0.86;
-    utterance.rate = options?.rate ?? 0.98;
-    utterance.volume = 1.0;
+    // Shadow Voice calibration: -0.15 pitch shift (0.85 effective) for deep bass resonance, 0.95 calm rate, and compression
+    const calibratedPitch = Math.max(0.1, 1.0 + (this.engineTunings.pitch ?? -0.15));
+    utterance.pitch = options?.pitch ?? calibratedPitch;
+    utterance.rate = options?.rate ?? (this.engineTunings.rate ?? 0.95);
+    utterance.volume = this.engineTunings.volume ?? 1.0;
 
     utterance.onstart = () => {
       this.notify('speaking', cleanText);
@@ -355,3 +392,9 @@ class OmniVoiceEngine {
 }
 
 export const omniVoice = new OmniVoiceEngine();
+
+export function initializeShadowVoice(speechEngine: OmniVoiceEngine = omniVoice): void {
+  speechEngine.setVoiceProfile(shadowVoiceConfig.voiceId);
+  speechEngine.updateTunings(shadowVoiceConfig.engineParameters);
+  speechEngine.applySpatialDSP(shadowVoiceConfig.spatialAudio);
+}

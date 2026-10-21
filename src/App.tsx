@@ -48,6 +48,7 @@ import { onDeviceAI, DualLaneAnalysisResult } from './lib/onDeviceAI';
 import { auth, testFirestoreConnection } from './lib/firebase';
 import { User } from 'firebase/auth';
 import { omniVoice } from './lib/omniVoice';
+import { OmniVoidBackground } from './components/OmniVoidBackground';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'keyboard' | 'chat' | 'vision' | 'workspace' | 'extension' | 'studios' | 'sync' | 'setup' | 'admin'>('keyboard');
@@ -663,6 +664,9 @@ export default function App() {
             : 'max-w-2xl h-screen rounded-none sm:rounded-2xl border-0 sm:border sm:border-white/10'
         } relative h-[100dvh]`}
       >
+        {/* 3D Gyro-Responsive UI Overlay Canvas */}
+        <OmniVoidBackground />
+
         {/* 1. NATIVE MOBILE STATUS BAR & HARDWARE NOTCH */}
         <div className="pt-2 px-6 pb-1 flex items-center justify-between bg-[#000000] text-[11px] font-mono font-semibold text-slate-400 shrink-0 z-30">
           <span>{currentTime}</span>
