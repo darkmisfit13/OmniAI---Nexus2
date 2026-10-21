@@ -269,122 +269,34 @@ export interface VaultAsset {
   createdAt: string;
 }
 
-/**
- * SQL Schema & RLS Policies for Supabase SQL Editor:
- * 
- * CREATE TABLE IF NOT EXISTS vault_assets (
- *   id TEXT PRIMARY KEY,
- *   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
- *   name TEXT NOT NULL,
- *   type TEXT NOT NULL,
- *   studio_source TEXT,
- *   duration TEXT,
- *   resolution TEXT,
- *   lyrics TEXT,
- *   bpm INTEGER,
- *   thumbnail_url TEXT,
- *   audio_url TEXT,
- *   code_snippet TEXT,
- *   text TEXT,
- *   tags TEXT[],
- *   created_at TIMESTAMPTZ DEFAULT NOW(),
- *   updated_at TIMESTAMPTZ DEFAULT NOW()
- * );
- * 
- * ALTER TABLE vault_assets ENABLE ROW LEVEL SECURITY;
- * 
- * CREATE POLICY "Users can view their own vault assets"
- *   ON vault_assets FOR SELECT
- *   USING (auth.uid() = user_id);
- * 
- * CREATE POLICY "Users can insert their own vault assets"
- *   ON vault_assets FOR INSERT
- *   WITH CHECK (auth.uid() = user_id);
- * 
- * CREATE POLICY "Users can update their own vault assets"
- *   ON vault_assets FOR UPDATE
- *   USING (auth.uid() = user_id);
- * 
- * CREATE POLICY "Users can delete their own vault assets"
- *   ON vault_assets FOR DELETE
- *   USING (auth.uid() = user_id);
- */
-export const VAULT_ASSETS_RLS_SQL = `
-CREATE TABLE IF NOT EXISTS vault_assets (
-  id TEXT PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  name TEXT NOT NULL,
-  type TEXT NOT NULL,
-  studio_source TEXT,
-  duration TEXT,
-  resolution TEXT,
-  lyrics TEXT,
-  bpm INTEGER,
-  thumbnail_url TEXT,
-  audio_url TEXT,
-  code_snippet TEXT,
-  text TEXT,
-  tags TEXT[],
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE vault_assets ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Users can view their own vault assets" ON vault_assets;
-CREATE POLICY "Users can view their own vault assets"
-  ON vault_assets FOR SELECT
-  USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can insert their own vault assets" ON vault_assets;
-CREATE POLICY "Users can insert their own vault assets"
-  ON vault_assets FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can update their own vault assets" ON vault_assets;
-CREATE POLICY "Users can update their own vault assets"
-  ON vault_assets FOR UPDATE
-  USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can delete their own vault assets" ON vault_assets;
-CREATE POLICY "Users can delete their own vault assets"
-  ON vault_assets FOR DELETE
-  USING (auth.uid() = user_id);
-`;
-
 export async function listVaultAssets(userId: string): Promise<VaultAsset[]> {
-  try {
-    const { data, error } = await supabase
-      .from('vault_assets')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('vault_assets')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
 
-    if (error) {
-      console.warn('[Supabase Vault] Query note:', error.message);
-      return [];
-    }
-
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      studioSource: row.studio_source || undefined,
-      duration: row.duration || undefined,
-      resolution: row.resolution || undefined,
-      lyrics: row.lyrics || undefined,
-      bpm: row.bpm || undefined,
-      thumbnailUrl: row.thumbnail_url || undefined,
-      audioUrl: row.audio_url || undefined,
-      codeSnippet: row.code_snippet || undefined,
-      text: row.text || undefined,
-      tags: row.tags || undefined,
-      createdAt: row.created_at || new Date().toISOString(),
-    }));
-  } catch (err) {
-    console.warn('[Supabase Vault] Exception:', err);
-    return [];
+  if (error) {
+    console.error('[Supabase Vault] Query failure:', error);
+    throw new Error(`Supabase Vault query failed: ${error.message} (Code: ${error.code || 'UNKNOWN'})`);
   }
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    studioSource: row.studio_source || undefined,
+    duration: row.duration || undefined,
+    resolution: row.resolution || undefined,
+    lyrics: row.lyrics || undefined,
+    bpm: row.bpm || undefined,
+    thumbnailUrl: row.thumbnail_url || undefined,
+    audioUrl: row.audio_url || undefined,
+    codeSnippet: row.code_snippet || undefined,
+    text: row.text || undefined,
+    tags: row.tags || undefined,
+    createdAt: row.created_at || new Date().toISOString(),
+  }));
 }
 
 export async function saveVaultAsset(userId: string, asset: VaultAsset): Promise<void> {

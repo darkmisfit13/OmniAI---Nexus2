@@ -27,7 +27,8 @@ import {
   RefreshCw,
   LogIn,
   LogOut,
-  Info
+  Info,
+  AlertCircle
 } from 'lucide-react';
 import { 
   supabase, 
@@ -112,6 +113,7 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
+  const [vaultQueryError, setVaultQueryError] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -146,6 +148,7 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   const fetchUserVault = useCallback(async (userId: string) => {
     setIsSyncing(true);
     setSyncStatusText('Loading your private vault from Supabase...');
+    setVaultQueryError(null);
     try {
       const remoteAssets = await listVaultAssets(userId);
       if (remoteAssets && remoteAssets.length > 0) {
@@ -156,11 +159,12 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
         setSyncStatusText('Connected to Supabase (RLS Active)');
       }
     } catch (err: any) {
-      console.warn('[VaultAssetsDrawer] Could not fetch remote assets:', err);
-      setSyncStatusText('Local cache mode (Supabase table standby)');
+      console.error('[VaultAssetsDrawer] Supabase Vault query failed:', err);
+      const message = err?.message || 'Database query failed';
+      setVaultQueryError(message);
+      setSyncStatusText('Vault query failed (Check database table)');
     } finally {
       setIsSyncing(false);
-      setTimeout(() => setSyncStatusText(null), 3000);
     }
   }, []);
 
@@ -413,12 +417,34 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
           </div>
         </div>
 
+        {/* Visible Vault Query Failure Notice */}
+        {vaultQueryError && (
+          <div className="mx-4 my-2.5 p-3 rounded-xl bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs flex items-start gap-2.5 shadow-lg animate-in fade-in">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-rose-300">Vault Query Error</span>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-rose-900/60 text-rose-200">
+                  SQL Table Standby
+                </span>
+              </div>
+              <p className="text-[11px] text-rose-300/90 font-mono mt-1 break-words">
+                {vaultQueryError}
+              </p>
+              <p className="text-[10px] text-slate-300 mt-1.5 leading-relaxed">
+                Notice: The <code className="text-cyan-300 font-mono">vault_assets</code> table does not exist in your Supabase project yet. Apply migration <code className="text-cyan-300 font-mono">supabase/migrations/20261021160000_create_vault_assets.sql</code> in your Supabase SQL editor to create it.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Cross-Device Sync Verification Notice */}
-        <div className="px-4 py-1.5 bg-slate-950/80 border-b border-slate-800/80 flex items-center gap-1.5 text-[10.5px] text-slate-400 font-mono">
-          <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <span className="truncate">
-            Syncs with Vercel web app when authenticated with the same Supabase account.
-          </span>
+        <div className="px-4 py-2 bg-slate-950/90 border-b border-slate-800 flex items-start gap-2 text-[10.5px] text-slate-400 font-mono leading-relaxed">
+          <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="text-slate-300 font-semibold block">Cross-Device Vault Sync: Not Ready Yet</span>
+            <span>The Vercel web app does not yet read or write the <code className="text-cyan-300">vault_assets</code> table. Cross-device sync is inactive until the web app is updated to use this table.</span>
+          </div>
         </div>
 
         {/* Category Tabs */}

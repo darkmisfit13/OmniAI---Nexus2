@@ -24,7 +24,9 @@ import {
   FileText,
   CheckCircle2,
   List,
-  Maximize2
+  Maximize2,
+  X,
+  ChevronDown
 } from 'lucide-react';
 import { omniVoice } from '../lib/omniVoice';
 import { onDeviceAI } from '../lib/onDeviceAI';
@@ -34,6 +36,35 @@ interface SuggestionTrio {
   rawHonest: string;
   directAction: string;
 }
+
+export type PersonaTone = 'rawHonest' | 'witty' | 'directAction';
+
+export const personaToneMeta: Record<PersonaTone, { label: string; shortLabel: string; desc: string; icon: any; color: string; badge: string }> = {
+  directAction: {
+    label: 'Direct Action',
+    shortLabel: 'Action',
+    desc: 'Clear, decisive, milestone-driven responses with zero fluff and immediate next steps.',
+    icon: Zap,
+    color: 'text-[#00f2fe]',
+    badge: 'border-[#00f2fe]/40 bg-[#00f2fe]/10 text-[#00f2fe]',
+  },
+  rawHonest: {
+    label: 'Raw & Honest',
+    shortLabel: 'Raw',
+    desc: 'Unvarnished truth and authentic transparency. Speaks reality without corporate spin.',
+    icon: Flame,
+    color: 'text-[#c084fc]',
+    badge: 'border-[#7f00ff]/40 bg-[#7f00ff]/15 text-[#c084fc]',
+  },
+  witty: {
+    label: 'Witty & Fast',
+    shortLabel: 'Witty',
+    desc: 'Playful confidence, sharp nocturnal banter, and effortless magnetism.',
+    icon: Smile,
+    color: 'text-amber-300',
+    badge: 'border-amber-400/40 bg-amber-400/10 text-amber-300',
+  },
+};
 
 interface AIKeyboardBarProps {
   currentText: string;
@@ -213,14 +244,6 @@ export const AIKeyboardBar: React.FC<AIKeyboardBarProps> = ({
     }
   };
 
-  const toneOptions = [
-    { id: 'darkmisfit', label: 'DarkMisfit (Raw)', icon: Flame, color: 'text-[#7f00ff]' },
-    { id: 'punchy', label: 'Punchy & Fast', icon: Sparkles, color: 'text-[#00f2fe]' },
-    { id: 'diplomatic', label: 'Diplomatic', icon: Shield, color: 'text-[#0575e6]' },
-    { id: 'flirty', label: 'Witty & Charismatic', icon: Smile, color: 'text-pink-400' },
-    { id: 'professional', label: 'Executive', icon: Briefcase, color: 'text-blue-400' },
-  ];
-
   return (
     <div className="flex flex-col bg-[#000000] border-t border-white/10 shadow-[0_-10px_30px_rgba(0,0,0,0.8)] relative z-20">
       {/* 1. TOP INTELLIGENCE STATUS STRIP */}
@@ -281,19 +304,27 @@ export const AIKeyboardBar: React.FC<AIKeyboardBarProps> = ({
           )}
         </div>
 
-        {/* Tone menu toggle */}
-        <div className="flex items-center gap-1 ml-2">
+        {/* Persistent Persona Tone Toggle Button */}
+        <div className="flex items-center gap-1 ml-1.5 shrink-0">
           <button
-            onClick={() => setShowToneMenu(!showToneMenu)}
-            className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition ${
+            type="button"
+            onClick={() => {
+              triggerHaptic(10);
+              setShowToneMenu((prev) => !prev);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold transition-all border shadow-sm ${
               showToneMenu
-                ? 'bg-[#7f00ff]/20 text-[#c084fc] border-[#7f00ff]/50'
-                : 'bg-black/60 text-slate-400 border-white/10 hover:text-white'
+                ? 'bg-gradient-to-r from-[#00f2fe]/20 to-[#7f00ff]/30 text-white border-[#00f2fe] shadow-[0_0_12px_rgba(0,242,254,0.4)]'
+                : 'bg-black/85 text-cyan-300 border-cyan-500/40 hover:border-cyan-300 hover:text-white'
             }`}
-            title="Rewrite Tone (DarkMisfit Register)"
+            title={`Active Persona Tone: ${personaToneMeta[autoPilotTone]?.label || 'Direct Action'}. Click to switch.`}
           >
             <Wand2 className="w-3.5 h-3.5 text-[#00f2fe]" />
-            <span className="hidden sm:inline text-[11px] font-mono">Tone</span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 hidden xs:inline">Tone:</span>
+            <span className="text-[10.5px] font-bold text-white">
+              {personaToneMeta[autoPilotTone]?.label || 'Direct Action'}
+            </span>
+            <ChevronDown className={`w-3 h-3 text-cyan-400 transition-transform ${showToneMenu ? 'rotate-180' : ''}`} />
           </button>
         </div>
       </div>
@@ -379,26 +410,64 @@ export const AIKeyboardBar: React.FC<AIKeyboardBarProps> = ({
         </div>
       )}
 
-      {/* TONE POPOVER / SELECTOR */}
+      {/* PERSISTENT PERSONA TONE SELECTION MODAL / DROPDOWN */}
       {showToneMenu && (
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 p-2 bg-[#0B0B0C] border-b border-white/10 animate-in slide-in-from-top-2 duration-150">
-          {toneOptions.map((tone) => {
-            const Icon = tone.icon;
-            return (
-              <button
-                key={tone.id}
-                onClick={() => {
-                  onRewrite(tone.id);
-                  setShowToneMenu(false);
-                }}
-                disabled={!currentText.trim() || isAnalyzing}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-black/70 border border-white/10 hover:border-[#00f2fe]/50 hover:bg-black/90 transition text-center disabled:opacity-40"
-              >
-                <Icon className={`w-4 h-4 mb-1 ${tone.color}`} />
-                <span className="text-[10px] font-mono text-slate-200">{tone.label}</span>
-              </button>
-            );
-          })}
+        <div className="p-3 bg-[#080b12] border-b border-cyan-500/30 animate-in slide-in-from-top-2 duration-150 space-y-2.5 shadow-2xl relative z-30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wand2 className="w-4 h-4 text-[#00f2fe]" />
+              <span className="font-bold text-xs text-white font-mono">Persona Tone Selector</span>
+              <span className="text-[10px] text-slate-400 font-mono">• Switch AI Response Style</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowToneMenu(false)}
+              className="text-slate-400 hover:text-white p-1 rounded hover:bg-white/10"
+              title="Close tone selector"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {(['directAction', 'rawHonest', 'witty'] as const).map((toneKey) => {
+              const meta = personaToneMeta[toneKey];
+              const Icon = meta.icon;
+              const isSelected = autoPilotTone === toneKey;
+
+              return (
+                <button
+                  key={toneKey}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([12, 24, 12]);
+                    onChangeAutoPilotTone?.(toneKey);
+                    setShowToneMenu(false);
+                  }}
+                  className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all ${
+                    isSelected
+                      ? 'bg-cyan-950/50 border-[#00f2fe] shadow-[0_0_15px_rgba(0,242,254,0.3)]'
+                      : 'bg-black/80 border-white/10 hover:border-white/25 hover:bg-black/95'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <Icon className={`w-3.5 h-3.5 ${meta.color}`} />
+                      <span className="font-bold text-xs text-white font-mono">{meta.label}</span>
+                    </div>
+                    {isSelected && (
+                      <span className="flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-[#00f2fe]/20 text-[#00f2fe] border border-[#00f2fe]/40 font-bold">
+                        <Check className="w-2.5 h-2.5" /> ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10.5px] text-slate-400 leading-snug font-sans">
+                    {meta.desc}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
