@@ -190,7 +190,6 @@ let managedUsersStore = [
     name: 'DarkMisfit Admin',
     email: 'darkmisfit.ai@gmail.com',
     tier: 'Enterprise',
-    creditsRemaining: 999999,
     status: 'active',
   },
   {
@@ -198,27 +197,9 @@ let managedUsersStore = [
     name: 'Elena Rostova',
     email: 'elena.beats@nocturne.io',
     tier: 'Studio Ultra',
-    creditsRemaining: 18450,
     status: 'active',
   },
 ];
-
-// Studio Token Computation Reference
-export const STUDIO_TOKEN_COSTS: Record<string, number> = {
-  DIGITAL_SHADOW: 5,   // Multi-AI consensus routing
-  PHANTOM_CUT: 2,      // Mobile generative layout
-  RESONANCE: 3,        // Audio/stem processing
-  OBSIDIAN_CANVAS: 2,  // Object removal and brush overlays
-  THE_FOUNDRY: 10,     // Full-stack code compiles
-  TERMINAL_MIND: 2,    // Code debugging and logic patches
-  VOID_ENGINE: 8,      // 3D vector and shader passes
-  SAFE_HORIZON: 1,     // Overlay visibility checks
-  PRISM_LAB: 4,        // UI assembly
-  BLUEPRINT: 3,        // Database structure designs
-  KINETIC: 2,          // Webhook trigger loops
-  NEXUS: 2,            // Secure GitHub handshakes
-  NIGHTWATCH: 4        // Live property auditing
-};
 
 // Health Check
 app.get('/api/health', (req: Request, res: Response) => {
@@ -231,22 +212,21 @@ app.get('/api/health', (req: Request, res: Response) => {
   });
 });
 
-// Wallet token verification and status endpoints (Disabled - informational only)
-// Note: Unverified client-supplied userIds and in-memory balances must not be presented as real billing.
+// Wallet token verification and status endpoints: DISABLED
+// Mock in-memory wallet endpoints and hardcoded balances are disabled to prevent presenting them as real billing or token protection.
 app.get('/api/wallet', (req: Request, res: Response) => {
   res.json({
     active: false,
-    status: 'disabled_prototype',
-    disclaimer: 'Live billing is disabled. This is an informational prototype; balance deduction requires verified server-side authentication.',
-    studioTokenEstimates: STUDIO_TOKEN_COSTS,
+    status: 'disabled',
+    disclaimer: 'Mock in-memory wallet endpoints and hardcoded balances are disabled. Token deduction requires verified server-side authentication and persistent database balances.',
   });
 });
 
 app.post('/api/wallet/authorize', (req: Request, res: Response) => {
   res.status(501).json({
-    enabled: false,
+    active: false,
     authorized: false,
-    error: 'Token deduction and authorization endpoints are disabled until verified server-side identity and persistent database balances are implemented.',
+    error: 'Wallet authorization and deduction endpoints are disabled. They are not presented as real billing or token protection.',
   });
 });
 
@@ -515,7 +495,7 @@ Analyze the question from the vantage points of these models, identify the core 
 Return a well-formatted markdown verdict with artistic clarity and no corporate fluff.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: councilPrompt,
       });
 
@@ -583,7 +563,7 @@ app.post('/api/enhance-prompt', async (req: Request, res: Response) => {
 
     if (ai) {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: `Transform this raw idea into a high-density, production-grade creative or technical prompt for Omni AI. Make it structured, vivid, and actionable:\n"${prompt}"`,
       });
       return res.json({ enhancedPrompt: response.text });
@@ -604,7 +584,7 @@ app.post('/api/omni-wave/enhance-lyrics', async (req: Request, res: Response) =>
 
     if (ai) {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: `You are an elite music producer for OmniWave (Suno style).
 User input: "${topicOrWord || 'Dark Misfit Anthem'}"
 Music Style: "${style}"

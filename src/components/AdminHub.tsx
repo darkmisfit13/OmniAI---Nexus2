@@ -407,12 +407,12 @@ export const AdminHub: React.FC<AdminHubProps> = ({ onClose }) => {
     },
     {
       id: 'billing',
-      title: 'Billing & Credit Wallets',
+      title: 'Billing & Token Wallets',
       category: 'billing',
       categoryLabel: 'Wallet & Plans',
-      description: 'Inspect studio credit balances, review consumption rates (OmniBeat/OmniWave), and activate vouchers.',
+      description: 'Billing and in-memory wallets are disabled. They are not presented as real billing or token protection.',
       icon: DollarSign,
-      statusBadge: '999,999 CR Available',
+      statusBadge: 'Disabled',
       keywords: ['billing', 'credits', 'wallet', 'escrow', 'omnibeat', 'omniwave', 'tiers', 'subscription', 'price'],
     },
     {
@@ -1521,48 +1521,17 @@ export const AdminHub: React.FC<AdminHubProps> = ({ onClose }) => {
               {/* ======================================================== */}
               {selectedSubPage === 'billing' && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Total Credit Reserves</span>
-                      <p className="text-2xl font-bold font-mono text-cyan-300 mt-1">999,999 CR</p>
-                      <span className="text-[10px] text-emerald-400 flex items-center gap-1 mt-1 font-mono">
-                        <Check className="w-3 h-3" /> Root Enterprise Tier Active
-                      </span>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">OmniBeat Escrow Rate</span>
-                      <p className="text-lg font-bold font-mono text-white mt-1">400 CR Escrow</p>
-                      <span className="text-[10px] text-slate-400 block mt-1">5 CR analysis • 3 CR/image • 8 CR/sec</span>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">OmniWave Music Rate</span>
-                      <p className="text-lg font-bold font-mono text-white mt-1">12 CR / 24 CR</p>
-                      <span className="text-[10px] text-slate-400 block mt-1">12 CR Teaser • 24 CR Full Song Master</span>
-                    </div>
-                  </div>
-
-                  {/* Voucher Activation Form */}
                   <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-                    <h3 className="text-xs font-mono uppercase text-cyan-400 font-bold tracking-wider">
-                      Redeem Studio Credits Voucher
-                    </h3>
-                    <div className="flex gap-2 max-w-md">
-                      <input
-                        type="text"
-                        placeholder="ENTER-VOUCHER-CODE-XXXX"
-                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white uppercase font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500"
-                      />
-                      <button
-                        onClick={() => {
-                          triggerHaptic(15);
-                          showNotification('Voucher successfully validated. +10,000 Credits applied.');
-                        }}
-                        className="px-3.5 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-bold text-xs hover:bg-cyan-400 transition"
-                      >
-                        Redeem
-                      </button>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-slate-500" />
+                      <h3 className="font-bold text-sm text-white font-mono">Live Billing & Token Protection: Inactive</h3>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed font-mono">
+                      Mock in-memory wallet endpoints and hardcoded credit balances have been disabled. 
+                      They are not presented as real billing or token protection. Studio operations remain open for direct development and prototype testing.
+                    </p>
+                    <div className="pt-2 border-t border-slate-800 text-[11px] font-mono text-slate-500">
+                      Token deduction and real billing require verified server-side identity and persistent database balances.
                     </div>
                   </div>
                 </div>

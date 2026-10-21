@@ -47,6 +47,7 @@ import { JarvisTelemetryHUD } from './components/JarvisTelemetryHUD';
 import { onDeviceAI, DualLaneAnalysisResult } from './lib/onDeviceAI';
 import { auth, testFirestoreConnection } from './lib/firebase';
 import { User } from 'firebase/auth';
+import { getCurrentUser, saveVaultAsset } from './lib/supabase';
 import { omniVoice } from './lib/omniVoice';
 import { OmniVoidBackground } from './components/OmniVoidBackground';
 
@@ -110,11 +111,14 @@ export default function App() {
         );
       } catch {}
     }
-    fetch('/api/vault/assets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newAsset),
-    }).catch(() => {});
+    // Sync to Supabase under authenticated user's ID (RLS protected)
+    getCurrentUser().then((user) => {
+      if (user) {
+        saveVaultAsset(user.id, newAsset).catch((err) => {
+          console.warn('[App] Supabase Vault asset save:', err);
+        });
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -986,19 +990,6 @@ export default function App() {
             <span className="text-[9px] font-mono">
               {activeTab === 'keyboard' && isKeyboardCollapsed ? 'Keys: Off' : 'Keys'}
             </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('chat')}
-            className={`flex flex-col items-center justify-center w-14 py-1 rounded-xl transition-all ${
-              activeTab === 'chat'
-                ? 'text-[#00f2fe] font-bold drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-            title="Dedicated OmniAI Chat & Multi-LLM Council"
-          >
-            <MessageSquare className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px] font-mono">Omni Chat</span>
           </button>
 
           <button

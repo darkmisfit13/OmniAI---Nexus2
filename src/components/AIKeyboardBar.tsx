@@ -221,31 +221,6 @@ export const AIKeyboardBar: React.FC<AIKeyboardBarProps> = ({
     { id: 'professional', label: 'Executive', icon: Briefcase, color: 'text-blue-400' },
   ];
 
-  // Prepare the 3 distinct register carousel cards
-  const carouselItems = [
-    {
-      tier: 'Casual / Witty',
-      text: suggestionTrio?.witty || suggestedReplies[0] || 'Short answer: yes, moving forward.',
-      color: 'border-[#00f2fe]/40 text-slate-100 bg-[#0B0B0C]/90 hover:border-[#00f2fe]',
-      tag: 'WITTY',
-      tagColor: 'text-[#00f2fe] bg-[#00f2fe]/10 border-[#00f2fe]/30',
-    },
-    {
-      tier: 'Deep / Raw Honest',
-      text: suggestionTrio?.rawHonest || suggestedReplies[1] || 'I’d rather be upfront than pretend this isn’t pressing.',
-      color: 'border-[#7f00ff]/40 text-slate-100 bg-[#0B0B0C]/90 hover:border-[#7f00ff]',
-      tag: 'DEEP & HONEST',
-      tagColor: 'text-[#c084fc] bg-[#7f00ff]/15 border-[#7f00ff]/30',
-    },
-    {
-      tier: 'Direct / Action',
-      text: suggestionTrio?.directAction || suggestedReplies[2] || 'Locking this in immediately with full verification.',
-      color: 'border-[#0575e6]/40 text-slate-100 bg-[#0B0B0C]/90 hover:border-[#0575e6]',
-      tag: 'DIRECT ACTION',
-      tagColor: 'text-[#38bdf8] bg-[#0575e6]/15 border-[#0575e6]/30',
-    },
-  ];
-
   return (
     <div className="flex flex-col bg-[#000000] border-t border-white/10 shadow-[0_-10px_30px_rgba(0,0,0,0.8)] relative z-20">
       {/* 1. TOP INTELLIGENCE STATUS STRIP */}
@@ -457,50 +432,7 @@ export const AIKeyboardBar: React.FC<AIKeyboardBarProps> = ({
         </div>
       </div>
 
-      {/* 3. SLIDING PREDICTIVE SUGGESTION CAROUSEL */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[#000000] border-b border-white/10 relative">
-        {/* Sliding Carousel of 3 Tailored Conversational Responses */}
-        <div className="flex-1 flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-          {isAnalyzing ? (
-            <div className="flex items-center gap-2 text-xs text-[#00f2fe] animate-pulse px-2 font-mono">
-              <span className="w-2 h-2 rounded-full bg-[#00f2fe] animate-ping" />
-              <span>Omni dual-lane engine reading viewport & drafting responses...</span>
-            </div>
-          ) : (
-            carouselItems.map((item, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  triggerHaptic(12);
-                  onSelectSuggestion(item.text);
-                }}
-                className={`flex flex-col items-start p-2 rounded-xl border text-left shadow-md transition-all active:scale-95 shrink-0 max-w-[240px] sm:max-w-[280px] group ${item.color}`}
-              >
-                <div className="flex items-center justify-between w-full mb-1">
-                  <span className={`px-1.5 py-0.2 rounded text-[8px] font-mono font-bold tracking-wider border ${item.tagColor}`}>
-                    {item.tag}
-                  </span>
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      omniVoice.speak(item.text);
-                    }}
-                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-[#00f2fe] transition"
-                    title="Speak suggestion with OmniVoice"
-                  >
-                    <Volume2 className="w-3 h-3" />
-                  </span>
-                </div>
-                <span className="text-[11px] font-medium leading-snug line-clamp-2 text-slate-200 group-hover:text-white">
-                  {item.text}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* 3. ACTIVE TYPING DOCK */}
+      {/* ACTIVE TYPING DOCK */}
       <div className="flex items-center gap-2 px-3 py-2 bg-[#0B0B0C] border-t border-white/10">
         <button
           onClick={handleMicDictate}

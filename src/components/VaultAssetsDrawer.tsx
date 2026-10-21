@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   FolderLock, 
   X, 
@@ -22,33 +22,25 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Cloud,
-  CloudOff,
+  Database,
+  ShieldCheck,
   RefreshCw,
-  ToggleLeft,
-  ToggleRight,
-  LogIn
+  LogIn,
+  LogOut,
+  Info
 } from 'lucide-react';
-import { db, auth, signInWithGoogleWorkspace } from '../lib/firebase';
-import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
-import { User, onAuthStateChanged } from 'firebase/auth';
+import { 
+  supabase, 
+  getCurrentUser, 
+  onAuthStateChange, 
+  listVaultAssets, 
+  saveVaultAsset, 
+  deleteVaultAsset,
+  VaultAsset 
+} from '../lib/supabase';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 
-export interface VaultAsset {
-  id: string;
-  name: string;
-  type: 'audio' | 'video' | 'image' | 'code' | 'text';
-  studioSource?: string;
-  duration?: string;
-  resolution?: string;
-  lyrics?: string;
-  bpm?: number;
-  thumbnailUrl?: string;
-  audioUrl?: string;
-  codeSnippet?: string;
-  text?: string;
-  tags?: string[];
-  createdAt: string;
-}
+export type { VaultAsset };
 
 export const initialVaultAssets: VaultAsset[] = [
   {
@@ -116,111 +108,150 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
   const [sortBy, setSortBy] = useState<'date' | 'type' | 'label'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // User Authentication Identity (Firebase Auth currentUser)
-  const [currentUser, setCurrentUser] = useState<User | null>(() => auth.currentUser);
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-
-  // Cloud Sync to Firestore State
-  const [cloudSyncEnabled, setCloudSyncEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('omni_vault_cloud_sync_enabled') === 'true';
-    }
-    return false;
-  });
+  // Supabase User Authentication State (Single backend for shared account data)
+  const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
-  // Listen to Firebase Auth state changes
+  // Load authenticated Supabase user and listen to auth changes
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      if (!user) {
-        setCloudSyncEnabled(false);
+    getCurrentUser().then((u) => {
+      setSupabaseUser(u);
+      if (u) {
+        fetchUserVault(u.id);
       }
     });
-    return () => unsub();
+
+    const { data: authListener } = onAuthStateChange((user) => {
+      setSupabaseUser(user);
+      if (user) {
+        fetchUserVault(user.id);
+      } else {
+        setInternalAssets(assets.length > 0 ? assets : initialVaultAssets);
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
   }, []);
 
-  const pushToFirestore = async (itemsToPush: VaultAsset[]) => {
-    if (!currentUser) {
-      setSyncStatusText('Unavailable: Sign in to sync your vault');
-      return;
-    }
-    if (!itemsToPush || itemsToPush.length === 0) return;
+  // Fetch private Vault items from Supabase (enforces RLS: auth.uid() = user_id)
+  const fetchUserVault = useCallback(async (userId: string) => {
     setIsSyncing(true);
-    setSyncStatusText(`Syncing ${itemsToPush.length} item${itemsToPush.length !== 1 ? 's' : ''} to users/${currentUser.uid.slice(0, 6)}.../vault`);
+    setSyncStatusText('Loading your private vault from Supabase...');
     try {
-      for (const asset of itemsToPush) {
-        const cleanId = (asset.id || `vault_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-        const payload = {
-          ...asset,
-          syncedAt: new Date().toISOString(),
-          ownerId: currentUser.uid,
-          ownerEmail: currentUser.email || '',
-        };
-
-        // EXCLUSIVELY write to the authenticated user's private subcollection in Firestore:
-        // /users/{userId}/vault/{assetId} matches firestore.rules isOwner(userId)
-        // No writes to globalVault (which firestore.rules denies)
-        const userDocRef = doc(db, 'users', currentUser.uid, 'vault', cleanId);
-        await setDoc(userDocRef, payload, { merge: true });
+      const remoteAssets = await listVaultAssets(userId);
+      if (remoteAssets && remoteAssets.length > 0) {
+        setInternalAssets(remoteAssets);
+        setSyncStatusText(`Synced ${remoteAssets.length} item${remoteAssets.length !== 1 ? 's' : ''} via Supabase RLS`);
+      } else {
+        // If no items in Supabase yet, keep initial sample assets
+        setSyncStatusText('Connected to Supabase (RLS Active)');
       }
-
-      setSyncStatusText(`Synced to users/${currentUser.uid.slice(0, 6)}.../vault`);
-      setTimeout(() => setSyncStatusText(null), 3500);
     } catch (err: any) {
-      console.warn('Firestore Vault Cloud Sync notice:', err);
-      setSyncStatusText(err?.message?.includes('permission') ? 'Firestore permission denied' : 'Sync error (offline cache)');
-      setTimeout(() => setSyncStatusText(null), 3500);
+      console.warn('[VaultAssetsDrawer] Could not fetch remote assets:', err);
+      setSyncStatusText('Local cache mode (Supabase table standby)');
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  const handleToggleCloudSync = async () => {
-    if (!currentUser) {
-      setSyncStatusText('Sign-in required to enable cloud sync');
       setTimeout(() => setSyncStatusText(null), 3000);
-      return;
+    }
+  }, []);
+
+  // Handle adding custom asset with Supabase persistence
+  const handleAddAsset = async (asset: VaultAsset) => {
+    // 1. Update local UI
+    setInternalAssets((prev) => [asset, ...prev.filter((a) => a.id !== asset.id)]);
+    if (onAddCustomAsset) {
+      onAddCustomAsset(asset);
     }
 
-    const nextState = !cloudSyncEnabled;
-    setCloudSyncEnabled(nextState);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('omni_vault_cloud_sync_enabled', String(nextState));
-    }
-
-    if (nextState) {
-      await pushToFirestore(internalAssets);
-    } else {
-      setSyncStatusText('User cloud sync paused');
-      setTimeout(() => setSyncStatusText(null), 2000);
+    // 2. Persist to Supabase if authenticated
+    if (supabaseUser) {
+      setIsSyncing(true);
+      try {
+        await saveVaultAsset(supabaseUser.id, asset);
+        setSyncStatusText('Saved to Supabase with Row Level Security');
+      } catch (err: any) {
+        console.warn('[VaultAssetsDrawer] Failed to save to Supabase:', err);
+        setSyncStatusText('Saved locally (Supabase write pending)');
+      } finally {
+        setIsSyncing(false);
+        setTimeout(() => setSyncStatusText(null), 3000);
+      }
     }
   };
 
-  const handleManualSync = async () => {
-    if (!currentUser) {
-      setSyncStatusText('Sign-in required to sync');
-      setTimeout(() => setSyncStatusText(null), 3000);
-      return;
+  // Handle deleting an asset with Supabase persistence
+  const handleDeleteAsset = async (id: string) => {
+    setInternalAssets((prev) => prev.filter((a) => a.id !== id));
+    if (onDeleteAsset) {
+      onDeleteAsset(id);
     }
-    await pushToFirestore(internalAssets);
+
+    if (supabaseUser) {
+      setIsSyncing(true);
+      try {
+        await deleteVaultAsset(supabaseUser.id, id);
+        setSyncStatusText('Deleted from Supabase');
+      } catch (err: any) {
+        console.warn('[VaultAssetsDrawer] Failed to delete from Supabase:', err);
+      } finally {
+        setIsSyncing(false);
+        setTimeout(() => setSyncStatusText(null), 2500);
+      }
+    }
   };
 
-  const handleSignIn = async () => {
-    setIsAuthenticating(true);
+  // Quick Supabase Auth Submission
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail.trim() || !authPassword) return;
+    setIsAuthLoading(true);
+    setAuthError(null);
+
     try {
-      await signInWithGoogleWorkspace();
-    } catch (err) {
-      console.error('Sign-in error from vault drawer:', err);
+      if (authMode === 'signup') {
+        const { error } = await supabase.auth.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        if (error) throw error;
+        setSyncStatusText('Confirmation email sent. Please check your inbox.');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        if (error) throw error;
+        setShowAuthModal(false);
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Authentication failed');
     } finally {
-      setIsAuthenticating(false);
+      setIsAuthLoading(false);
     }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setSupabaseUser(null);
+    setInternalAssets(initialVaultAssets);
+    setSyncStatusText('Signed out (Switched to guest mode)');
+    setTimeout(() => setSyncStatusText(null), 3000);
   };
 
   useEffect(() => {
-    if (assets) setInternalAssets(assets);
-  }, [assets]);
+    if (assets && !supabaseUser) {
+      setInternalAssets(assets);
+    }
+  }, [assets, supabaseUser]);
 
   if (!isOpen) return null;
 
@@ -297,7 +328,7 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-sm text-white">Omni Global Vault</h3>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800">
-                  {assets.length} Assets
+                  {internalAssets.length} Assets
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
@@ -309,80 +340,85 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+            title="Close Vault"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* User Cloud Vault (Firestore users/{userId}/vault) Toolbar */}
-        <div className="px-4 py-2.5 bg-gradient-to-r from-cyan-950/40 via-slate-900 to-purple-950/30 border-b border-slate-800 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
+        {/* Supabase Unified Backend & Row Level Security Toolbar */}
+        <div className="px-4 py-2.5 bg-gradient-to-r from-cyan-950/40 via-slate-900 to-indigo-950/30 border-b border-slate-800 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className={`p-1.5 rounded-lg border transition ${
-              currentUser && cloudSyncEnabled 
+              supabaseUser 
                 ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_10px_rgba(0,242,254,0.2)]' 
-                : 'bg-slate-800/80 border-slate-700 text-slate-500'
+                : 'bg-slate-800/80 border-slate-700 text-slate-400'
             }`}>
-              {currentUser ? <Cloud className="w-4 h-4" /> : <CloudOff className="w-4 h-4" />}
+              {supabaseUser ? <ShieldCheck className="w-4 h-4" /> : <Database className="w-4 h-4" />}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-white text-[11px]">User Cloud Vault</span>
+                <span className="font-bold text-white text-[11px]">Supabase Vault Sync</span>
                 <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
-                  currentUser
-                    ? cloudSyncEnabled
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(0,242,254,0.2)]'
-                      : 'bg-slate-800 text-slate-400'
-                    : 'bg-amber-950/50 text-amber-400 border border-amber-600/40'
+                  supabaseUser
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(0,242,254,0.2)]'
+                    : 'bg-slate-800 text-slate-400 border border-slate-750'
                 }`}>
-                  {currentUser ? (cloudSyncEnabled ? 'ACTIVE' : 'PAUSED') : 'SIGN-IN REQUIRED'}
+                  {supabaseUser ? 'RLS ENFORCED' : 'LOCAL GUEST'}
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 font-mono">
+              <p className="text-[10px] text-slate-400 font-mono truncate">
                 {syncStatusText || (
-                  currentUser
-                    ? (cloudSyncEnabled ? `Syncing to users/${currentUser.uid.slice(0, 6)}.../vault` : `Destination: users/${currentUser.uid.slice(0, 6)}.../vault`)
-                    : 'Sync unavailable: Sign in to enable private user vault'
+                  supabaseUser
+                    ? `Account: ${supabaseUser.email || supabaseUser.id.slice(0, 8)}`
+                    : 'Sign in to isolate vault by account'
                 )}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {!currentUser ? (
-              <button
-                type="button"
-                onClick={handleSignIn}
-                disabled={isAuthenticating}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 text-[10px] font-mono font-bold transition shadow-sm"
-                title="Sign in with Google Workspace to enable Firestore vault sync"
-              >
-                <LogIn className="w-3 h-3" />
-                <span>{isAuthenticating ? 'Signing in...' : 'Sign In'}</span>
-              </button>
-            ) : (
+          <div className="flex items-center gap-2 shrink-0">
+            {supabaseUser ? (
               <>
-                {cloudSyncEnabled && (
-                  <button
-                    type="button"
-                    onClick={handleManualSync}
-                    disabled={isSyncing}
-                    className="p-1 rounded-md text-cyan-400 hover:text-cyan-300 hover:bg-slate-800 transition"
-                    title="Trigger Immediate Cloud Push"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  </button>
-                )}
                 <button
                   type="button"
-                  onClick={handleToggleCloudSync}
-                  className={`transition ${cloudSyncEnabled ? 'text-cyan-400 hover:text-cyan-300' : 'text-slate-600 hover:text-slate-400'}`}
-                  title={cloudSyncEnabled ? 'Disable User Cloud Sync' : 'Enable User Cloud Sync & Push Assets'}
+                  onClick={() => fetchUserVault(supabaseUser.id)}
+                  disabled={isSyncing}
+                  className="p-1 rounded-md text-cyan-400 hover:text-cyan-300 hover:bg-slate-800 transition"
+                  title="Reload from Supabase"
                 >
-                  {cloudSyncEnabled ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono transition"
+                  title="Sign out of Supabase"
+                >
+                  <LogOut className="w-3 h-3 text-slate-400" />
+                  <span>Exit</span>
                 </button>
               </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 text-[10px] font-mono font-bold transition shadow-sm"
+                title="Sign in with Supabase to sync your vault items across devices"
+              >
+                <LogIn className="w-3 h-3" />
+                <span>Sign In</span>
+              </button>
             )}
           </div>
+        </div>
+
+        {/* Cross-Device Sync Verification Notice */}
+        <div className="px-4 py-1.5 bg-slate-950/80 border-b border-slate-800/80 flex items-center gap-1.5 text-[10.5px] text-slate-400 font-mono">
+          <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          <span className="truncate">
+            Syncs with Vercel web app when authenticated with the same Supabase account.
+          </span>
         </div>
 
         {/* Category Tabs */}
@@ -498,13 +534,7 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
                       <div className="flex items-center justify-between gap-1">
                         <h4 className="font-bold text-xs text-white truncate">{asset.name}</h4>
                         <button
-                          onClick={() => {
-                            if (onDeleteAsset) {
-                              onDeleteAsset(asset.id);
-                            } else {
-                              setInternalAssets((prev) => prev.filter((a) => a.id !== asset.id));
-                            }
-                          }}
+                          onClick={() => handleDeleteAsset(asset.id)}
                           className="text-slate-500 hover:text-rose-400 p-1"
                           title="Delete from Vault"
                         >
@@ -583,18 +613,18 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
 
         {/* Quick Add Custom Asset Footer */}
         <div className="p-3 border-t border-slate-800 bg-[#080b12] flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">Vault Encrypted & Synced</span>
+          <span className="text-[11px] text-slate-400 font-mono">
+            {supabaseUser ? 'Supabase RLS Protected' : 'Guest Mode'}
+          </span>
           <button
             onClick={() => {
-              if (onAddCustomAsset) {
-                onAddCustomAsset({
-                  id: `asset-${Date.now()}`,
-                  name: `Quick Note Asset ${new Date().toLocaleTimeString()}`,
-                  type: 'text',
-                  text: 'Omni quick note saved to vault.',
-                  createdAt: new Date().toISOString(),
-                });
-              }
+              handleAddAsset({
+                id: `asset-${Date.now()}`,
+                name: `Quick Note Asset ${new Date().toLocaleTimeString()}`,
+                type: 'text',
+                text: 'Omni quick note saved to vault.',
+                createdAt: new Date().toISOString(),
+              });
             }}
             className="px-3 py-1.5 rounded-lg bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-900/60 font-semibold text-xs flex items-center gap-1.5 transition-all"
           >
@@ -602,6 +632,89 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
             <span>Add Asset</span>
           </button>
         </div>
+
+        {/* Modal: Supabase Account Sign-In / Sign-Up */}
+        {showAuthModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-[#090b14] border border-cyan-500/40 p-5 space-y-4 shadow-2xl relative">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-cyan-400" />
+                  <h4 className="font-bold text-sm text-white">
+                    {authMode === 'login' ? 'Sign in to Supabase' : 'Create Supabase Account'}
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAuthModal(false)}
+                  className="text-slate-400 hover:text-white p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Connect your account to store and sync your Vault items under your own private user ID, protected by Supabase Row Level Security.
+              </p>
+
+              {authError && (
+                <div className="p-2 rounded bg-rose-950/50 border border-rose-500/50 text-[11px] text-rose-300">
+                  {authError}
+                </div>
+              )}
+
+              <form onSubmit={handleAuthSubmit} className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 mb-1">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="user@example.com"
+                    className="w-full rounded-lg bg-slate-900 border border-slate-750 px-3 py-2 text-white font-mono focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-300 mb-1">Password</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg bg-slate-900 border border-slate-750 px-3 py-2 text-white font-mono focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isAuthLoading}
+                  className="w-full py-2 rounded-lg bg-cyan-400 text-slate-950 font-bold hover:bg-cyan-300 transition text-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isAuthLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{authMode === 'login' ? 'Sign In' : 'Sign Up'}</span>
+                </button>
+              </form>
+
+              <div className="pt-2 text-center border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode((prev) => (prev === 'login' ? 'signup' : 'login'));
+                    setAuthError(null);
+                  }}
+                  className="text-[11px] text-cyan-400 hover:underline"
+                >
+                  {authMode === 'login'
+                    ? "Don't have an account? Sign up"
+                    : 'Already have an account? Sign in'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>
