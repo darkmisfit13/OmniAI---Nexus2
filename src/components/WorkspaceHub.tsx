@@ -13,7 +13,9 @@ import {
   Folder, 
   Database,
   Lock,
-  Sparkles
+  Sparkles,
+  X,
+  FolderLock
 } from 'lucide-react';
 import { 
   auth, 
@@ -35,11 +37,13 @@ import { User } from 'firebase/auth';
 interface WorkspaceHubProps {
   onInsertToKeyboard?: (text: string) => void;
   onLoadIntoScreenSimulator?: (title: string, body: string, sender: string) => void;
+  onSaveToVault?: (asset: any) => void;
 }
 
 export const WorkspaceHub: React.FC<WorkspaceHubProps> = ({
   onInsertToKeyboard,
   onLoadIntoScreenSimulator,
+  onSaveToVault,
 }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
   const [activeTab, setActiveTab] = useState<'drive' | 'gmail' | 'keep'>('drive');
@@ -59,11 +63,117 @@ export const WorkspaceHub: React.FC<WorkspaceHubProps> = ({
   const [isSendingMail, setIsSendingMail] = useState(false);
   const [mailSentSuccess, setMailSentSuccess] = useState(false);
 
-  // Keep state
-  const [keepNotes, setKeepNotes] = useState<KeepNoteItem[]>(DEFAULT_KEEP_NOTES);
+  // Keep & Scratchpad state
+  const [keepNotes, setKeepNotes] = useState<KeepNoteItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('omni_keep_notes');
+      if (saved) {
+        try { return JSON.parse(saved); } catch {}
+      }
+    }
+    return DEFAULT_KEEP_NOTES;
+  });
   const [newNoteTitle, setNewNoteTitle] = useState('');
   const [newNoteBody, setNewNoteBody] = useState('');
   const [showAddNote, setShowAddNote] = useState(false);
+
+  // Floating '+' Quick Scratchpad Note Modal State
+  const [showQuickScratchpad, setShowQuickScratchpad] = useState(false);
+  const [quickNoteTitle, setQuickNoteTitle] = useState('');
+  const [quickNoteBody, setQuickNoteBody] = useState('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Synchronize Note directly with Global Vault & LocalStorage
+  const syncNoteToVault = (title: string, body: string) => {
+    const cleanTitle = title.trim() || 'Untitled Scratchpad';
+    const vaultAsset = {
+      id: `vault-scratchpad-${Date.now()}`,
+      name: `${cleanTitle}.txt`,
+      type: 'text' as const,
+      studioSource: 'Workspace Hub',
+      text: body.trim(),
+      tags: ['scratchpad', 'workspace', 'vault', 'note'],
+      createdAt: 'Just now',
+    };
+
+    // 1. Sync to localStorage for global vault persistence
+    try {
+      const existing = JSON.parse(localStorage.getItem('omni_vault_assets') || '[]');
+      localStorage.setItem('omni_vault_assets', JSON.stringify([vaultAsset, ...existing]));
+    } catch (err) {
+      console.warn('Vault local storage warning:', err);
+    }
+
+    // 2. Broadcast vault update event across all drawers and components
+    window.dispatchEvent(new CustomEvent('omni_vault_updated', { detail: { asset: vaultAsset } }));
+
+    // 3. Sync to backend API endpoint
+    fetch('/api/vault/assets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(vaultAsset),
+    }).catch((err) => console.warn('Vault server sync warning:', err));
+
+    // 4. Invoke prop callback if passed
+    onSaveToVault?.(vaultAsset);
+
+    // 5. Tactile feedback
+    if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      if (localStorage.getItem('omni_haptic_enabled') !== 'false') {
+        try { navigator.vibrate(12); } catch {}
+      }
+    }
+
+    // 6. Show notification toast
+    setToastMessage(`✨ Scratchpad "${cleanTitle}" saved & synced to Vault.`);
+    setTimeout(() => setToastMessage(null), 3200);
+  };
+
+  const handleCreateKeepNote = () => {
+    if (!newNoteTitle.trim() && !newNoteBody.trim()) return;
+    const title = newNoteTitle.trim() || 'Untitled Note';
+    const body = newNoteBody.trim();
+    const newNote: KeepNoteItem = {
+      id: `keep_${Date.now()}`,
+      title,
+      body,
+      isPinned: true,
+      color: 'cyan',
+      updatedAt: 'Just now',
+    };
+    const updated = [newNote, ...keepNotes];
+    setKeepNotes(updated);
+    try {
+      localStorage.setItem('omni_keep_notes', JSON.stringify(updated));
+    } catch {}
+    syncNoteToVault(title, body);
+    setNewNoteTitle('');
+    setNewNoteBody('');
+    setShowAddNote(false);
+  };
+
+  const handleSaveQuickScratchpad = () => {
+    if (!quickNoteTitle.trim() && !quickNoteBody.trim()) return;
+    const title = quickNoteTitle.trim() || 'Quick Scratchpad';
+    const body = quickNoteBody.trim();
+    const newNote: KeepNoteItem = {
+      id: `keep_${Date.now()}`,
+      title,
+      body,
+      isPinned: true,
+      color: 'cyan',
+      updatedAt: 'Just now',
+    };
+    const updated = [newNote, ...keepNotes];
+    setKeepNotes(updated);
+    try {
+      localStorage.setItem('omni_keep_notes', JSON.stringify(updated));
+    } catch {}
+    syncNoteToVault(title, body);
+    setQuickNoteTitle('');
+    setQuickNoteBody('');
+    setShowQuickScratchpad(false);
+  };
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -133,22 +243,6 @@ export const WorkspaceHub: React.FC<WorkspaceHubProps> = ({
     } finally {
       setIsSendingMail(false);
     }
-  };
-
-  const handleCreateKeepNote = () => {
-    if (!newNoteTitle.trim()) return;
-    const newNote: KeepNoteItem = {
-      id: `keep_${Date.now()}`,
-      title: newNoteTitle.trim(),
-      body: newNoteBody.trim(),
-      isPinned: true,
-      color: 'cyan',
-      updatedAt: 'Just now',
-    };
-    setKeepNotes([newNote, ...keepNotes]);
-    setNewNoteTitle('');
-    setNewNoteBody('');
-    setShowAddNote(false);
   };
 
   return (
@@ -494,6 +588,139 @@ export const WorkspaceHub: React.FC<WorkspaceHubProps> = ({
           </div>
         )}
       </div>
+
+      {/* FLOATING '+' SCRATCHPAD NOTE BUTTON */}
+      <div className="fixed bottom-24 right-5 sm:bottom-28 sm:right-8 z-40">
+        <button
+          type="button"
+          onClick={() => {
+            setShowQuickScratchpad(true);
+            if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+              if (localStorage.getItem('omni_haptic_enabled') !== 'false') {
+                try { navigator.vibrate(10); } catch {}
+              }
+            }
+          }}
+          className="group relative flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#00f2fe] via-[#0575e6] to-[#7f00ff] text-white shadow-[0_0_25px_rgba(0,242,254,0.45)] hover:shadow-[0_0_35px_rgba(0,242,254,0.7)] hover:scale-105 active:scale-95 transition-all duration-200 border border-white/30"
+          title="Create Scratchpad Note (Auto-syncs with Vault)"
+          aria-label="Create Scratchpad Note"
+        >
+          <Plus className="w-7 h-7 text-white stroke-[2.5] group-hover:rotate-90 transition-transform duration-300" />
+          <span className="absolute -top-9 right-0 bg-[#090b14]/95 text-cyan-300 text-[10px] font-mono px-2.5 py-1 rounded-md border border-cyan-500/30 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition shadow-lg">
+            + Scratchpad → Vault Sync
+          </span>
+        </button>
+      </div>
+
+      {/* QUICK SCRATCHPAD MODAL */}
+      {showQuickScratchpad && (
+        <div className="fixed inset-0 z-50 overflow-hidden flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-6 animate-in fade-in">
+          <div className="relative w-full max-w-lg bg-[#090b14] border border-cyan-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col space-y-4 p-5 sm:p-6">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>New Scratchpad Note</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                      Vault Auto-Sync
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    Captures raw thoughts & automatically persists to the Global Vault.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuickScratchpad(false);
+                  setQuickNoteTitle('');
+                  setQuickNoteBody('');
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form Inputs */}
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">
+                  Note Title
+                </label>
+                <input
+                  type="text"
+                  value={quickNoteTitle}
+                  onChange={(e) => setQuickNoteTitle(e.target.value)}
+                  placeholder="e.g., Midnight Production Directives, Architecture Idea..."
+                  className="w-full rounded-xl bg-black border border-white/15 px-3.5 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-400 font-mono"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">
+                  Scratchpad Content
+                </label>
+                <textarea
+                  rows={5}
+                  value={quickNoteBody}
+                  onChange={(e) => setQuickNoteBody(e.target.value)}
+                  placeholder="Type raw lyrics, code logic, concept sketches, checklist items, or heavy emotional prompts..."
+                  className="w-full rounded-xl bg-black border border-white/15 p-3.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-400 font-mono leading-relaxed"
+                />
+              </div>
+
+              {/* Sync Destination Indicator */}
+              <div className="p-3 rounded-xl bg-gradient-to-r from-purple-950/30 via-slate-900 to-cyan-950/30 border border-purple-500/20 flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-2 text-purple-300">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Vault Destination: <strong className="text-white">/vault/scratchpads</strong></span>
+                </div>
+                <span className="font-mono text-[10px] text-cyan-400">⚡ Instant Sync</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuickScratchpad(false);
+                  setQuickNoteTitle('');
+                  setQuickNoteBody('');
+                }}
+                className="px-4 py-2 rounded-xl border border-white/10 text-slate-400 hover:text-white text-xs font-mono transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveQuickScratchpad}
+                disabled={!quickNoteTitle.trim() && !quickNoteBody.trim()}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs shadow-[0_0_15px_rgba(0,242,254,0.3)] transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Check className="w-4 h-4 stroke-[2.5]" />
+                <span>Save & Sync to Vault</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#090b14] border border-cyan-500/50 text-cyan-300 text-xs px-4 py-2 rounded-xl shadow-[0_0_20px_rgba(0,242,254,0.3)] font-mono animate-in fade-in slide-in-from-bottom-2">
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 };
+

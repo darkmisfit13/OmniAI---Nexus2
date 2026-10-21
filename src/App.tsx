@@ -35,7 +35,7 @@ import { OmniChatAndCouncil } from './components/OmniChatAndCouncil';
 import { OmniCompanionPanel } from './components/OmniCompanionPanel';
 import { useOmniChat } from './context/OmniChatContext';
 import { AdminHub } from './components/AdminHub';
-import { VaultAssetsDrawer } from './components/VaultAssetsDrawer';
+import { VaultAssetsDrawer, VaultAsset, initialVaultAssets } from './components/VaultAssetsDrawer';
 import { MobileSetupGuide } from './components/MobileSetupGuide';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -58,11 +58,74 @@ export default function App() {
   // Shared OmniChat Context for Companion Panel & Dedicated Chat Page
   const { isCompanionOpen, setIsCompanionOpen, setActiveStudioContext } = useOmniChat();
 
+  // 3D Keyboard Haptic Feedback State
+  const [hapticFeedback, setHapticFeedback] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('omni_haptic_enabled') !== 'false';
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    const handleHapticChange = (e: any) => {
+      if (e?.detail?.enabled !== undefined) {
+        setHapticFeedback(Boolean(e.detail.enabled));
+      } else if (typeof window !== 'undefined') {
+        setHapticFeedback(localStorage.getItem('omni_haptic_enabled') !== 'false');
+      }
+    };
+    window.addEventListener('omni_haptic_changed', handleHapticChange);
+    return () => window.removeEventListener('omni_haptic_changed', handleHapticChange);
+  }, []);
+
   // Studios Sidebar & Vault Drawer & Admin Modals
   const [isStudiosSidebarOpen, setIsStudiosSidebarOpen] = useState(false);
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [selectedStudio, setSelectedStudio] = useState<StudioId>('motion');
+
+  // Global Vault Assets State synced across Workspace, Studios & Drawer
+  const [vaultAssets, setVaultAssets] = useState<VaultAsset[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('omni_vault_assets');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {}
+      }
+    }
+    return initialVaultAssets;
+  });
+
+  const handleSaveToVault = useCallback((asset: any) => {
+    const newAsset = { ...asset, id: asset.id || `vault-${Date.now()}` };
+    setVaultAssets((prev) => [newAsset, ...prev.filter((a) => a.id !== newAsset.id)]);
+    if (typeof window !== 'undefined') {
+      try {
+        const existing = JSON.parse(localStorage.getItem('omni_vault_assets') || '[]');
+        localStorage.setItem(
+          'omni_vault_assets',
+          JSON.stringify([newAsset, ...existing.filter((a: any) => a.id !== newAsset.id)])
+        );
+      } catch {}
+    }
+    fetch('/api/vault/assets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newAsset),
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleVaultUpdate = (e: any) => {
+      if (e?.detail?.asset) {
+        const incoming = e.detail.asset;
+        setVaultAssets((prev) => [incoming, ...prev.filter((a) => a.id !== incoming.id)]);
+      }
+    };
+    window.addEventListener('omni_vault_updated', handleVaultUpdate);
+    return () => window.removeEventListener('omni_vault_updated', handleVaultUpdate);
+  }, []);
 
   // Sync studio context with OmniChatContext whenever studio or tab changes
   useEffect(() => {
@@ -852,6 +915,7 @@ export default function App() {
                 setActiveTab('keyboard');
               }}
               onLoadIntoScreenSimulator={handleLoadIntoScreenSimulator}
+              onSaveToVault={handleSaveToVault}
             />
           )}
 
@@ -1042,6 +1106,8 @@ export default function App() {
       <VaultAssetsDrawer
         isOpen={isVaultOpen}
         onClose={() => setIsVaultOpen(false)}
+        assets={vaultAssets}
+        onAddCustomAsset={handleSaveToVault}
         onInsertToKeyboard={(text) => {
           setCurrentDraftText(text);
           setActiveTab('keyboard');
@@ -1059,12 +1125,37 @@ export default function App() {
                 <span className="font-bold text-sm text-white">Omni Settings & Admin Hub</span>
                 <span className="text-[10px] font-mono text-slate-400">• Dark Misfit Studios</span>
               </div>
-              <button
-                onClick={() => setIsAdminModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !hapticFeedback;
+                    setHapticFeedback(next);
+                    localStorage.setItem('omni_haptic_enabled', String(next));
+                    if (next && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+                      try { navigator.vibrate(14); } catch {}
+                    }
+                    window.dispatchEvent(new CustomEvent('omni_haptic_changed', { detail: { enabled: next } }));
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono font-medium transition ${
+                    hapticFeedback
+                      ? 'bg-cyan-950/70 border-cyan-500/50 text-cyan-300 shadow-[0_0_8px_rgba(0,242,254,0.2)]'
+                      : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
+                  }`}
+                  title={hapticFeedback ? 'Disable 3D Keyboard Vibration' : 'Enable 3D Keyboard Vibration'}
+                >
+                  <Zap className={`w-3.5 h-3.5 ${hapticFeedback ? 'text-cyan-400' : 'text-slate-500'}`} />
+                  <span className="hidden xs:inline">3D Haptics:</span>
+                  <span className="font-bold">{hapticFeedback ? 'ON' : 'OFF'}</span>
+                </button>
+                <button
+                  onClick={() => setIsAdminModalOpen(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                  title="Close Settings"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto">
               <AdminHub />

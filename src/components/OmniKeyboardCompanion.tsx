@@ -55,7 +55,20 @@ export const OmniKeyboardCompanion: React.FC<OmniKeyboardCompanionProps> = ({
     ['123', '🌐', 'SPACE', '.', 'ENTER'],
   ];
 
+  // 3D Keyboard Haptic Vibration feedback
+  const triggerHaptic = (customMs?: number) => {
+    try {
+      if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        if (localStorage.getItem('omni_haptic_enabled') === 'false') return;
+        const strength = localStorage.getItem('omni_haptic_strength') || 'subtle';
+        const ms = customMs || (strength === 'firm' ? 24 : strength === 'balanced' ? 14 : 8);
+        navigator.vibrate(ms);
+      }
+    } catch {}
+  };
+
   const handleKeyPress = (key: string) => {
+    triggerHaptic();
     if (key === 'BACKSPACE') {
       setTypedText((prev) => prev.slice(0, -1));
     } else if (key === 'SPACE') {

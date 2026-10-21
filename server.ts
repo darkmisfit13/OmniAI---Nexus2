@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
-import { OMNI_PERSONA, buildOmniSystemPrompt } from './src/lib/omniPersona';
+import { OMNIAI_MANIFESTO, OMNI_PERSONA, buildOmniSystemPrompt } from './src/lib/omniPersona';
 
 dotenv.config();
 
@@ -214,8 +214,8 @@ app.get('/api/health', (req: Request, res: Response) => {
   });
 });
 
-// Canonical OmniAI persona from lib/omniPersona.ts (source of truth)
-const OMNIAI_PERMANENT_PERSONA = OMNI_PERSONA;
+// Canonical OmniAI persona from lib/omniPersona.ts (source of truth: OMNIAI_MANIFESTO)
+const OMNIAI_PERMANENT_PERSONA = OMNIAI_MANIFESTO;
 
 // 1. OmniAI Unified Chatbot & Multi-LLM Cascade Endpoint
 app.post('/api/chat', async (req: Request, res: Response) => {

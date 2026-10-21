@@ -47,7 +47,7 @@ import { WorkspaceHub } from './WorkspaceHub';
 import { DesktopSyncBridge } from './DesktopSyncBridge';
 import { MobileSetupGuide } from './MobileSetupGuide';
 import { omniVoice } from '../lib/omniVoice';
-import { OMNI_PERSONA } from '../lib/omniPersona';
+import { OMNIAI_MANIFESTO, OMNI_PERSONA } from '../lib/omniPersona';
 
 interface ManagedUser {
   id: string;
@@ -114,6 +114,19 @@ export const AdminHub: React.FC<AdminHubProps> = ({ onClose }) => {
   });
   const [tactileSounds, setTactileSounds] = useState(false);
   const [telemetryInterval, setTelemetryInterval] = useState('5s');
+
+  // Keep haptic state synchronized with global events
+  useEffect(() => {
+    const handleHapticChange = (e: any) => {
+      if (e?.detail?.enabled !== undefined) {
+        setHapticFeedback(Boolean(e.detail.enabled));
+      } else if (typeof window !== 'undefined') {
+        setHapticFeedback(localStorage.getItem('omni_haptic_enabled') !== 'false');
+      }
+    };
+    window.addEventListener('omni_haptic_changed', handleHapticChange);
+    return () => window.removeEventListener('omni_haptic_changed', handleHapticChange);
+  }, []);
 
   // Master App Settings State
   const [fallbackPolicy, setFallbackPolicy] = useState<'cascade' | 'core_only'>('cascade');
@@ -201,6 +214,7 @@ export const AdminHub: React.FC<AdminHubProps> = ({ onClose }) => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('omni_haptic_enabled', String(enabled));
       localStorage.setItem('omni_haptic_strength', intensity);
+      window.dispatchEvent(new CustomEvent('omni_haptic_changed', { detail: { enabled, intensity } }));
     }
     if (enabled) {
       const ms = intensity === 'firm' ? 24 : intensity === 'balanced' ? 14 : 8;
@@ -632,6 +646,81 @@ export const AdminHub: React.FC<AdminHubProps> = ({ onClose }) => {
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Quick Controls: 3D Keyboard Haptic Feedback Switch */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-950/40 via-slate-900/90 to-purple-950/30 border border-cyan-500/30 shadow-[0_0_15px_rgba(0,242,254,0.1)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 shrink-0">
+                    <Zap className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-2">
+                      <span>3D Keyboard Haptic Feedback</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                        hapticFeedback 
+                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(0,242,254,0.2)]' 
+                          : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {hapticFeedback ? 'ENABLED' : 'DISABLED'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Enable or disable vibration tactile responses for 3D keyboard interactions (keys, spacebar, backspace, and gestures).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  {hapticFeedback && (
+                    <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5">
+                      {(['subtle', 'balanced', 'firm'] as const).map((strength) => (
+                        <button
+                          key={strength}
+                          type="button"
+                          onClick={() => {
+                            handleUpdateHapticConfig(true, strength);
+                            showNotification(`Haptic intensity: ${strength}`);
+                          }}
+                          className={`px-2.5 py-1 rounded text-[10px] font-mono capitalize transition ${
+                            hapticIntensity === strength
+                              ? 'bg-cyan-500 text-slate-950 font-bold'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                          title={`Set haptic intensity to ${strength}`}
+                        >
+                          {strength}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !hapticFeedback;
+                      handleUpdateHapticConfig(next, hapticIntensity);
+                      showNotification(`3D Keyboard haptics ${next ? 'enabled' : 'disabled'}`);
+                    }}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg border text-xs font-mono font-bold transition shadow-sm ${
+                      hapticFeedback
+                        ? 'border-cyan-500/50 bg-cyan-950/60 text-cyan-300 hover:bg-cyan-900/60 shadow-[0_0_10px_rgba(0,242,254,0.2)]'
+                        : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}
+                    title={hapticFeedback ? 'Click to disable 3D keyboard vibration' : 'Click to enable 3D keyboard vibration'}
+                  >
+                    {hapticFeedback ? (
+                      <>
+                        <ToggleRight className="w-5 h-5 text-cyan-400" />
+                        <span>Vibration ON</span>
+                      </>
+                    ) : (
+                      <>
+                        <ToggleLeft className="w-5 h-5 text-slate-500" />
+                        <span>Vibration OFF</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -1509,15 +1598,55 @@ export const AdminHub: React.FC<AdminHubProps> = ({ onClose }) => {
                 <div className="space-y-4">
                   <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-4">
                     <div>
-                      <label className="text-xs font-bold text-white block mb-1">
-                        Master Permanent System Persona Prompt
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-white block">
+                          Master Permanent System Persona Prompt (DarkMisfitStudios)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSystemPersonaPrompt(OMNI_PERSONA);
+                            showNotification('Reset to canonical DarkMisfitStudios persona.');
+                          }}
+                          className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 underline"
+                        >
+                          Reset to Web App Default
+                        </button>
+                      </div>
                       <textarea
-                        rows={3}
+                        rows={11}
                         value={systemPersonaPrompt}
                         onChange={(e) => setSystemPersonaPrompt(e.target.value)}
-                        className="w-full rounded-lg bg-slate-900 border border-slate-800 p-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+                        className="w-full rounded-lg bg-slate-900 border border-slate-800 p-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500 leading-relaxed"
                       />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Authoritative source of truth: <code className="text-cyan-300">src/lib/omniPersona.ts</code>. Used for all local fallbacks and prompt cascades.
+                      </p>
+                    </div>
+
+                    {/* 3D Keyboard Vibration Setting */}
+                    <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>3D Keyboard Haptic Vibration Responses</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Haptic response state: <span className="font-mono text-cyan-300 font-bold">{hapticFeedback ? 'ON' : 'OFF'}</span> ({hapticIntensity})
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !hapticFeedback;
+                          handleUpdateHapticConfig(next, hapticIntensity);
+                          showNotification(`3D Keyboard haptics ${next ? 'enabled' : 'disabled'}`);
+                        }}
+                        className="text-cyan-400 hover:text-cyan-300"
+                        title={hapticFeedback ? 'Disable 3D Keyboard Vibration' : 'Enable 3D Keyboard Vibration'}
+                      >
+                        {hapticFeedback ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6 text-slate-600" />}
+                      </button>
                     </div>
 
                     <div className="space-y-2">
