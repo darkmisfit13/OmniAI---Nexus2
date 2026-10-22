@@ -267,8 +267,6 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
     }
   }, [assets, supabaseUser]);
 
-  if (!isOpen) return null;
-
   const currentList = internalAssets;
   const filteredAssets = useMemo(() => {
     const list = currentList.filter((asset) => {
@@ -288,6 +286,8 @@ export const VaultAssetsDrawer: React.FC<VaultAssetsDrawerProps> = ({
       return sortOrder === 'desc' ? -comparison : comparison;
     });
   }, [currentList, activeTab, sortBy, sortOrder]);
+
+  if (!isOpen) return null;
 
   const togglePlayAudio = (id: string) => {
     setPlayingAudioId((prev) => (prev === id ? null : id));

@@ -139,9 +139,41 @@ export const OmniChatAndCouncil: React.FC<OmniChatAndCouncilProps> = ({ onSaveTo
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Local Chat Search State
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const chatSearchInputRef = useRef<HTMLInputElement>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Filter messages based on local search query
+  const filteredMessages = useMemo(() => {
+    if (!chatSearchQuery.trim()) return messages;
+    const query = chatSearchQuery.toLowerCase().trim();
+    return messages.filter((msg) => {
+      if (msg.text && msg.text.toLowerCase().includes(query)) return true;
+      if (msg.sender && msg.sender.toLowerCase().includes(query)) return true;
+      if (msg.mode && msg.mode.toLowerCase().includes(query)) return true;
+      if (msg.councilData) {
+        if (msg.councilData.question && msg.councilData.question.toLowerCase().includes(query)) return true;
+        if (msg.councilData.verdict && msg.councilData.verdict.toLowerCase().includes(query)) return true;
+        if (msg.councilData.consensusSummary && msg.councilData.consensusSummary.toLowerCase().includes(query)) return true;
+        if (
+          msg.councilData.modelAnswers &&
+          msg.councilData.modelAnswers.some(
+            (m) =>
+              (m.answer && m.answer.toLowerCase().includes(query)) ||
+              (m.modelName && m.modelName.toLowerCase().includes(query)) ||
+              (m.roleBadge && m.roleBadge.toLowerCase().includes(query))
+          )
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }, [messages, chatSearchQuery]);
 
   // Initialize and handle browser Speech Synthesis voices and voiceschanged event
   useEffect(() => {
